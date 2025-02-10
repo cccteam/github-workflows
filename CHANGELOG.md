@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.3.0](https://github.com/cccteam/github-workflows/compare/v5.2.0...v5.3.0) (2025-02-10)
+
+
+### Features
+
+* Add new branch type to Github Workflow check for Infrastructure changes ([590ec9f](https://github.com/cccteam/github-workflows/commit/590ec9f1e8a06dee19562b96cd26546a9cc4cee9))
+
 ## [5.2.0](https://github.com/cccteam/github-workflows/compare/v5.1.0...v5.2.0) (2024-09-06)
 
 
