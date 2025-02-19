@@ -44,7 +44,11 @@ jobs:
 
   go-generate-diff:
     name: Check for go generate changes
+    needs: detect-modules
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        modules: ${{ fromJson(needs.detect-modules.outputs.modules) }}
     steps:
       - name: Check out code into the Go module directory
         uses: actions/checkout@v4
@@ -52,15 +56,15 @@ jobs:
       - name: Set up Go for app
         uses: actions/setup-go@v5
         with:
-          go-version-file: ${{ inputs.working-directory }}/go.mod
-          cache-dependency-path: ${{ inputs.working-directory }}/go.sum
+          go-version-file: ${{ matrix.modules }}/go.mod
+          cache-dependency-path: ${{ matrix.modules }}/go.sum
 
       - name: Install mockgen
         run: go install go.uber.org/mock/mockgen@latest
 
       - name: Run go generate
         run: go generate ./...
-        working-directory: ${{ inputs.working-directory }}
+        working-directory: ${{ matrix.modules }}
 
       - name: Check for go generate changes
         run: |
