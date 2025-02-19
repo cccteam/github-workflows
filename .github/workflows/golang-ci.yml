@@ -112,11 +112,18 @@ jobs:
           go-version-file: ${{ inputs.working-directory }}/go.mod
           cache-dependency-path: ${{ inputs.working-directory }}/go.sum
 
+      - name: Set up ccclint
+        run: |
+          go install github.com/cccteam/ccc/lint/cmd/ccclint@latest
+          ccclint
+
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
           # The version of golangci-lint is required and must be specified without patch version: we always use the latest patch version.
           version: ${{ inputs.golangci-lint-version }}
+
+          install-mode: goinstall
 
           args: --timeout ${{ inputs.golangci-lint-timeout }} --verbose ${{ matrix.build-tag != '' && format('--build-tags {0}', matrix.build-tag) || '' }}
 
