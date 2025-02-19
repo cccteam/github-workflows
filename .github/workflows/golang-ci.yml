@@ -96,14 +96,19 @@ jobs:
 
   govulncheck:
     name: Go Vulnerability Check
+    needs: detect-modules
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        modules: ${{ fromJson(needs.detect-modules.outputs.modules) }}
     steps:
-      # NOTE: Repo checkout and go setup are handled within 'govulncheck-action'
-      - uses: golang/govulncheck-action@v1
+      - name: govulncheck ${{ matrix.modules }}
+        # NOTE: Repo checkout and go setup are handled within 'govulncheck-action'
+        uses: golang/govulncheck-action@v1
         with:
-          go-version-file: ${{ inputs.working-directory }}/go.mod
+          go-version-file: ${{ matrix.modules }}/go.mod
           go-package: ./...
-          work-dir: ${{ inputs.working-directory }}
+          work-dir: ${{ matrix.modules }}
 
   linter:
     name: Run golangci-lint
