@@ -40,7 +40,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - id: set-modules
-        run: echo "modules=$(jq '[.packages | keys[] | ${{ inputs.working-directory }}]' release-please-config.json)" >> $GITHUB_OUTPUT # uses the `release-please-config.json` in each repo to retrieve go module(s)
+        run: echo "modules=$(jq --arg workingDir ${{ inputs.working-directory }} '( ((.packages | keys?) // []) | if length == 0 then ["\($workingDir)"] else map("\($workingDir)/\(.)") end)' release-please-config.json)" >> $GITHUB_OUTPUT # uses the `release-please-config.json` in each repo to retrieve go module(s)
 
   go-generate-diff:
     name: Check for go generate changes
