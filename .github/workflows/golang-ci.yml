@@ -39,6 +39,8 @@ jobs:
       module-dir: ${{ steps.set-modules.outputs.module-dir }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - id: set-modules
         # compares the go modules from `release-please-config.json` in each repo to the directories with git diffs
         run: >-
