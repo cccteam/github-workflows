@@ -44,10 +44,9 @@ jobs:
       - id: set-modules
         # compares the go modules from `release-please-config.json` in each repo to the directories with git diffs
         run: >-
-          echo "module-dir=$(jq -cnS --argjson packages $(jq -cS --arg workingDir ${{ inputs.working-directory }} '( ((.packages | keys?) // []) | if length == 0 then ["\($workingDir)"] else map("\($workingDir)/\(.)") end)' release-please-config.json) --argjson changed_dirs $(git diff --name-only --line-prefix='./' refs/remotes/origin/master HEAD | awk -F "/*[^/]*/*$" '{ print ($1 == "." ? "./." : $1); }' | cut -d "/" -f1-2 | sort | uniq | jq -ncRS '[inputs]') '$packages | map(select(. as $pkg | $changed_dirs | index($pkg)))')" >> $GITHUB_OUTPUT
+          echo "module-dir=$(jq -cnS --argjson packages $(jq -cS --arg workingDir ${{ inputs.working-directory }} '( ((.packages | keys?) // []) | if length == 0 then ["\($workingDir)"] else map("\($workingDir)/\(.)") end)' release-please-config.json) --argjson changed_dirs $(git diff --name-only --line-prefix='./' refs/remotes/origin/master HEAD | awk -F "/*[^/]*/*$" '{ print ($1 == "." ? "./." : $1); }' | cut -d "/" -f1-2 | sort | uniq | jq -ncRS '[inputs]') '$packages | map(select(. as $pkg | $changed_dirs | index($pkg)))' | awk '{ print ($1 == "[]" ? "[./.]" : $1); }')" >> $GITHUB_OUTPUT
 
   go-generate-diff:
-    if: ${{ needs.detect-modules.outputs.module-dir != '[]' }}
     name: Check for go generate changes
     needs: detect-modules
     runs-on: ubuntu-latest
@@ -80,7 +79,6 @@ jobs:
           fi
 
   tests-and-builds:
-    if: ${{ needs.detect-modules.outputs.module-dir != '[]' }}
     name: Run tests and builds
     needs: detect-modules
     runs-on: ubuntu-latest
@@ -107,7 +105,6 @@ jobs:
         working-directory: ${{ matrix.module-dir }}
 
   govulncheck:
-    if: ${{ needs.detect-modules.outputs.module-dir != '[]' }}
     name: Go Vulnerability Check
     needs: detect-modules
     runs-on: ubuntu-latest
@@ -124,7 +121,6 @@ jobs:
           work-dir: ${{ matrix.module-dir }}
 
   linter:
-    if: ${{ needs.detect-modules.outputs.module-dir != '[]' }}
     name: Run golangci-lint
     needs: detect-modules
     runs-on: ubuntu-latest
