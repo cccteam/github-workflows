@@ -450,7 +450,7 @@ jobs:
           echo "$MESSAGE" >> $GITHUB_ENV
           echo 'EOF' >> $GITHUB_ENV
 
-      - uses: slackapi/slack-github-action@v1.26.0
+      - uses: slackapi/slack-github-action@v2.0.0
         with:
           channel-id: ${{ inputs.slack-channel-id || secrets.SLACK_CHANNEL_ID }}
           slack-message: ${{ env.SLACK_MESSAGE }}
