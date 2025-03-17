@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.4.0](https://github.com/cccteam/github-workflows/compare/v5.3.0...v5.4.0) (2025-03-17)
+
+
+### Features
+
+* Add monorepo support for all CI actions ([#53](https://github.com/cccteam/github-workflows/issues/53)) ([d1019ed](https://github.com/cccteam/github-workflows/commit/d1019ed4279ef9308fefc4fc8621f85538a25b27))
+
 ## [5.3.0](https://github.com/cccteam/github-workflows/compare/v5.2.0...v5.3.0) (2025-02-10)
 
 
