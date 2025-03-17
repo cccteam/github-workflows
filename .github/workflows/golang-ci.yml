@@ -33,9 +33,26 @@ on:
         default: false
 
 jobs:
+  detect-modules:
+    runs-on: ubuntu-latest
+    outputs:
+      module-dir: ${{ steps.set-modules.outputs.module-dir }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: set-modules
+        # compares the go modules from `release-please-config.json` in each repo to the directories with git diffs
+        run: >-
+          echo "module-dir=$(jq -cnS --argjson packages $(jq -cS --arg workingDir ${{ inputs.working-directory }} '( ((.packages | keys?) // []) | if length == 0 then ["\($workingDir)"] else map("\($workingDir)/\(.)") end)' release-please-config.json) --argjson changed_dirs $(git diff --name-only --line-prefix='./' refs/remotes/origin/master HEAD | awk -F "/*[^/]*/*$" '{ print ($1 == "." ? "./." : $1); }' | cut -d "/" -f1-2 | sort | uniq | jq -ncRS '[inputs]') '$packages | map(select(. as $pkg | $changed_dirs | index($pkg)))' | awk '{ print ($1 == "[]" ? "[\"./.\"]" : $1); }')" >> $GITHUB_OUTPUT
+
   go-generate-diff:
     name: Check for go generate changes
+    needs: detect-modules
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        module-dir: ${{ fromJson(needs.detect-modules.outputs.module-dir) }}
     steps:
       - name: Check out code into the Go module directory
         uses: actions/checkout@v4
@@ -43,15 +60,15 @@ jobs:
       - name: Set up Go for app
         uses: actions/setup-go@v5
         with:
-          go-version-file: ${{ inputs.working-directory }}/go.mod
-          cache-dependency-path: ${{ inputs.working-directory }}/go.sum
+          go-version-file: ${{ matrix.module-dir }}/go.mod
+          cache-dependency-path: ${{ matrix.module-dir }}/go.sum
 
       - name: Install mockgen
         run: go install go.uber.org/mock/mockgen@latest
 
       - name: Run go generate
         run: go generate ./...
-        working-directory: ${{ inputs.working-directory }}
+        working-directory: ${{ matrix.module-dir }}
 
       - name: Check for go generate changes
         run: |
@@ -63,10 +80,12 @@ jobs:
 
   tests-and-builds:
     name: Run tests and builds
+    needs: detect-modules
     runs-on: ubuntu-latest
     strategy:
       matrix:
         build-tag: ${{ fromJson(inputs.build-tags) }}
+        module-dir: ${{ fromJson(needs.detect-modules.outputs.module-dir) }}
     steps:
       - name: Check out code into the Go module directory
         uses: actions/checkout@v4
@@ -74,34 +93,41 @@ jobs:
       - name: Set up Go for app
         uses: actions/setup-go@v5
         with:
-          go-version-file: ${{ inputs.working-directory }}/go.mod
-          cache-dependency-path: ${{ inputs.working-directory }}/go.sum
+          go-version-file: ${{ matrix.module-dir }}/go.mod
+          cache-dependency-path: ${{ matrix.module-dir }}/go.sum
 
       - name: Run tests with race detection
         run: go test ${{ matrix.build-tag != '' && format('-tags {0}', matrix.build-tag) || '' }} -v -race ./...
-        working-directory: ${{ inputs.working-directory }}
+        working-directory: ${{ matrix.module-dir }}
 
       - name: Run build
         run: go build ${{ matrix.build-tag != '' && format('-tags {0}', matrix.build-tag) || '' }}
-        working-directory: ${{ inputs.working-directory }}
+        working-directory: ${{ matrix.module-dir }}
 
   govulncheck:
     name: Go Vulnerability Check
+    needs: detect-modules
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        module-dir: ${{ fromJson(needs.detect-modules.outputs.module-dir) }}
     steps:
-      # NOTE: Repo checkout and go setup are handled within 'govulncheck-action'
-      - uses: golang/govulncheck-action@v1
+      - name: govulncheck ${{ matrix.module-dir }}
+        # NOTE: Repo checkout and go setup are handled within 'govulncheck-action'
+        uses: golang/govulncheck-action@v1
         with:
-          go-version-file: ${{ inputs.working-directory }}/go.mod
+          go-version-file: ${{ matrix.module-dir }}/go.mod
           go-package: ./...
-          work-dir: ${{ inputs.working-directory }}
+          work-dir: ${{ matrix.module-dir }}
 
   linter:
     name: Run golangci-lint
+    needs: detect-modules
     runs-on: ubuntu-latest
     strategy:
       matrix:
         build-tag: ${{ fromJson(inputs.build-tags) }}
+        module-dir: ${{ fromJson(needs.detect-modules.outputs.module-dir) }}
     steps:
       - name: Check out code into the Go module directory
         uses: actions/checkout@v4
@@ -109,10 +135,10 @@ jobs:
       - name: Set up Go for app
         uses: actions/setup-go@v5
         with:
-          go-version-file: ${{ inputs.working-directory }}/go.mod
-          cache-dependency-path: ${{ inputs.working-directory }}/go.sum
+          go-version-file: ${{ matrix.module-dir }}/go.mod
+          cache-dependency-path: ${{ matrix.module-dir }}/go.sum
 
-      - name: golangci-lint
+      - name: golangci-lint ${{ matrix.module-dir }}
         uses: golangci/golangci-lint-action@v6
         with:
           # The version of golangci-lint is required and must be specified without patch version: we always use the latest patch version.
@@ -123,4 +149,4 @@ jobs:
           # Show only new issues if it's a pull request
           only-new-issues: ${{ inputs.golangci-lint-only-new-issues }}
 
-          working-directory: ${{ inputs.working-directory }}
+          working-directory: ${{ matrix.module-dir }} # if there is more than one module in the workspace they will all be linted
