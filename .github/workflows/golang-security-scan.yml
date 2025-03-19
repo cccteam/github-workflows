@@ -186,6 +186,7 @@ jobs:
           docker build $BUILD_ARGS -t $repo_name:latest .
 
       - name: Run Trivy vulnerability scanner (capture findings)
+        id: trivy_scan
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: "${{ env.REPO_NAME }}:latest"
@@ -193,7 +194,8 @@ jobs:
           output: ${{ env.REPORT_PATH }}
           vuln-type: "os,library"
           severity: "LOW,MEDIUM,HIGH,CRITICAL"
-          table-mode: "detailed"
+          exit-code: "1"
+        continue-on-error: true
 
       - name: Save Trivy report as artifact
         uses: actions/upload-artifact@v4
@@ -201,20 +203,11 @@ jobs:
           name: ${{ env.REPORT_NAME }}
           path: ${{ env.REPORT_PATH }}
 
-      - name: Report findings
+      - name: Report failed Trivy scan
+        if: steps.trivy_scan.outcome == 'failure'
         run: |
-          FILE=${{ env.REPORT_PATH }}
-          if ! grep -qiE "Total: [1-9]" "$FILE"; then
-            if grep -qiE "Total: 0" "$FILE"; then
-              echo "No vulnerabilities found"
-              exit 0;
-            else
-              echo "failed to properly parse the trivy report!\nFailed to find a Total line\n"
-            fi
-          fi
-          cat ${{ env.REPORT_PATH }}
-          exit 1;
-        shell: bash
+          echo "Trivy scan failed. Refer to the Trivy report for additional details."
+          exit 1
 
   dependabot:
     runs-on: ubuntu-latest
