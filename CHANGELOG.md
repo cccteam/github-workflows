@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.4.1](https://github.com/cccteam/github-workflows/compare/v5.4.0...v5.4.1) (2025-03-19)
+
+
+### Code Upgrade
+
+* Update the security scan for changes to aquasecurity/trivy-action ([#57](https://github.com/cccteam/github-workflows/issues/57)) ([4cf5933](https://github.com/cccteam/github-workflows/commit/4cf5933354890e6534ab4468f4a58c7fc104bbbb))
+
 ## [5.4.0](https://github.com/cccteam/github-workflows/compare/v5.3.0...v5.4.0) (2025-03-17)
 
 
