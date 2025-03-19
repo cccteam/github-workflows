@@ -206,7 +206,7 @@ jobs:
       - name: Report failed Trivy scan
         if: steps.trivy_scan.outcome == 'failure'
         run: |
-          echo "Trivy scan failed. Refer to the Trivy report for additional details."
+          cat ${{ env.REPORT_PATH }}
           exit 1
 
   dependabot:
