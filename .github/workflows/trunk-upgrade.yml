@@ -1,0 +1,39 @@
+name: Trunk Nightly Upgrade
+permissions: read-all
+
+on:
+  workflow_call:
+    inputs:
+      branch:
+        description: The branch to upgrade
+        required: false
+        type: string
+        default: master
+      prefix:
+        description: The prefix to use for commit messages
+        required: false
+        type: string
+        default: "infra: "
+    secrets:
+      TERRAFORM_DOCS: # Repurposing the terraform-docs token for permission to invoke github actions
+        required: true
+        description: The GitHub token to use for checking out the repo
+
+jobs:
+  trunk_upgrade:
+    name: Upgrade Trunk
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # For trunk to create PRs
+      pull-requests: write # For trunk to create PRs
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.TERRAFORM_DOCS }}
+      # >>> Install your own deps here (npm install, etc) <<<
+      - name: Trunk Upgrade
+        uses: trunk-io/trunk-action/upgrade@v1
+        with:
+          base: ${{inputs.branch}}
+          prefix: ${{inputs.prefix}}
