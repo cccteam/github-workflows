@@ -1,0 +1,45 @@
+name: Generate terraform docs
+permissions: read-all
+
+on:
+  workflow_call:
+    inputs:
+      working-dir:
+        description: The directory where the terraform files are located. This can be a comma separated list of directories in string format. Example - terraform/1-dev,terraform/2-tst,terraform/3-stg,terraform/4-prd
+        required: true
+        type: string
+      output-file:
+        description: The file to write the generated docs to
+        required: false
+        type: string
+        default: README.md
+      output-method:
+        description: The method to use to write the generated docs
+        required: false
+        type: string
+        default: replace
+      git-push:
+        description: Whether to push the changes back to the PR
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  docs:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # For tfdocs to write changes back to PRs
+      pull-requests: write # For tfdocs to write changes back to PRs
+      actions: write # For tfdocs to trigger actions
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          token: ${{ secrets.TERRAFORM_DOCS }}
+      - name: Render terraform docs and push changes back to PR
+        uses: terraform-docs/gh-actions@main
+        with:
+          working-dir: ${{ inputs.working-dir }}
+          output-file: ${{ inputs.output-file }}
+          output-method: ${{ inputs.output-method }}
+          git-push: ${{ inputs.git-push }}
