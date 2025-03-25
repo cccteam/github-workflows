@@ -13,11 +13,12 @@ on:
         description: The prefix to use for commit messages
         required: false
         type: string
-        default: "infra: "
-    secrets:
-      TERRAFORM_DOCS: # Repurposing the terraform-docs token for permission to invoke github actions
-        required: true
-        description: The GitHub token to use for checking out the repo
+        default: 'infra: '
+      token:
+        description: The token to use for git operations
+        required: false
+        type: string
+        default: ${{ github.token }}
 
 jobs:
   trunk_upgrade:
@@ -30,7 +31,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.TERRAFORM_DOCS }}
+          token: ${{ inputs.token }}
       # >>> Install your own deps here (npm install, etc) <<<
       - name: Trunk Upgrade
         uses: trunk-io/trunk-action/upgrade@v1
