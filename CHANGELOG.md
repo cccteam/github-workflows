@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.5.0](https://github.com/cccteam/github-workflows/compare/v5.4.1...v5.5.0) (2025-03-25)
+
+
+### Features
+
+* terraform-docs + trunk auto-upgrade workflow additions ([#60](https://github.com/cccteam/github-workflows/issues/60)) ([b0b4d46](https://github.com/cccteam/github-workflows/commit/b0b4d4614ebfbc5d36812cc8d68be9342fa35d19))
+
 ## [5.4.1](https://github.com/cccteam/github-workflows/compare/v5.4.0...v5.4.1) (2025-03-19)
 
 
