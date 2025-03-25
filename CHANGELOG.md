@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.5.1](https://github.com/cccteam/github-workflows/compare/v5.5.0...v5.5.1) (2025-03-25)
+
+
+### Bug Fixes
+
+* update token reference ([#62](https://github.com/cccteam/github-workflows/issues/62)) ([c689c56](https://github.com/cccteam/github-workflows/commit/c689c565eecd183cb785b35521359cd7e5f788f6))
+
 ## [5.5.0](https://github.com/cccteam/github-workflows/compare/v5.4.1...v5.5.0) (2025-03-25)
 
 
