@@ -1,5 +1,13 @@
 # Changelog
 
+## [5.6.0](https://github.com/cccteam/github-workflows/compare/v5.5.1...v5.6.0) (2025-05-14)
+
+
+### Features
+
+* Add runs-on input for CI reusable workflow ([#65](https://github.com/cccteam/github-workflows/issues/65)) ([4b8a71c](https://github.com/cccteam/github-workflows/commit/4b8a71c48ef516479ea070ffdc013678255c18e1))
+* Add runs-on input for Docker and security scan reusable workflow ([#67](https://github.com/cccteam/github-workflows/issues/67)) ([ca01f2d](https://github.com/cccteam/github-workflows/commit/ca01f2d33668c1119a80b04b504eb3137e936999))
+
 ## [5.5.1](https://github.com/cccteam/github-workflows/compare/v5.5.0...v5.5.1) (2025-03-25)
 
 
