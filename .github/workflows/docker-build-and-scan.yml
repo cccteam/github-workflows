@@ -34,11 +34,15 @@ on:
         type: string
         default: "LOW,MEDIUM,HIGH,CRITICAL"
         description: Comma-separated list of vulnerability severities to scan for. e.g. 'LOW,MEDIUM,HIGH,CRITICAL'
+      runs-on:
+        required: false
+        type: string
+        default: "ubuntu-latest"
 
 jobs:
   docker:
     name: Build & Scan Docker Image
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runs-on }}
     steps:
       - name: Check out code repository
         uses: actions/checkout@v4

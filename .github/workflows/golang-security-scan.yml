@@ -51,6 +51,10 @@ on:
           If not provided, no alerts will be ignored.
 
           Note: These alerts should be copied directly from the Dependabot issue so that the formatting is as expected.
+      runs-on:
+        required: false
+        type: string
+        default: "ubuntu-latest"
     secrets:
       SLACK_BOT_TOKEN:
         required: true
@@ -65,7 +69,7 @@ on:
 jobs:
   env-setup:
     name: Environment Setup
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runs-on }}
     outputs:
       checkout-refs: "[${{ steps.set_checkout_refs.outputs.checkout_refs }}]"
     steps:
@@ -93,7 +97,7 @@ jobs:
   govulncheck:
     needs: env-setup
     name: Go Vulnerability Check
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runs-on }}
     strategy:
       fail-fast: false
       matrix:
@@ -155,7 +159,7 @@ jobs:
   trivy:
     needs: env-setup
     name: Trivy Scan
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runs-on }}
     if: ${{ inputs.execute-trivy-scan }}
     strategy:
       fail-fast: false
@@ -210,7 +214,7 @@ jobs:
           exit 1
 
   dependabot:
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runs-on }}
     if: ${{ inputs.execute-dependabot-check }}
     steps:
       - name: Checkout repository
@@ -270,7 +274,7 @@ jobs:
 
   create_issues:
     name: Create issues for failed jobs
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runs-on }}
     strategy:
       fail-fast: false
       matrix:
@@ -399,7 +403,7 @@ jobs:
 
   slack_notification:
     name: Send Slack notification for failed jobs
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runs-on }}
     needs: [govulncheck, trivy, create_issues, dependabot]
     if: always() && (needs.govulncheck.result == 'failure' || needs.trivy.result == 'failure' || needs.dependabot.result == 'failure')
     steps:
