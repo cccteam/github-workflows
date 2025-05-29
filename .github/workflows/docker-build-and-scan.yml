@@ -64,7 +64,7 @@ jobs:
         run: |
           repo_name=$(echo "${{ github.repository }}" | awk '{print tolower($0)}')
           echo "REPO_NAME=$repo_name" >> $GITHUB_ENV
-          docker build $BUILD_ARGS -t $repo_name:latest .
+          docker build $BUILD_ARGS -t $repo_name:latest -f ${{ inputs.dockerfile }} .
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
