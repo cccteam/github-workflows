@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.6.1](https://github.com/cccteam/github-workflows/compare/v5.6.0...v5.6.1) (2025-05-29)
+
+
+### Bug Fixes
+
+* Add missing -f flag in docker build ([#68](https://github.com/cccteam/github-workflows/issues/68)) ([cc62d16](https://github.com/cccteam/github-workflows/commit/cc62d16536d199cd63d2740a17a110b46732e128))
+
 ## [5.6.0](https://github.com/cccteam/github-workflows/compare/v5.5.1...v5.6.0) (2025-05-14)
 
 
