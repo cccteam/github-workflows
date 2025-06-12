@@ -1,29 +1,29 @@
-name: Terraform Docs Generation
+name: Terraform Docs Generation (Reusable)
 
 on:
   workflow_call:
     inputs:
-      working-dirs:
+      working_dirs:
         description: Comma-separated list of directories containing Terraform configs
         required: true
         type: string
-      output-file:
+      output_file:
         description: Output file for generated docs
         required: false
         type: string
         default: README.md
-      output-method:
+      output_method:
         description: Method to apply the generated docs (e.g., replace, inject)
         required: false
         type: string
         default: replace
-      git-push:
+      git_push:
         description: Whether to push changes back to the PR
         required: false
         type: boolean
         default: true
     secrets:
-      TERRAFORM_DOCS_TOKEN:
+      terraform_docs_token:
         description: Personal Access Token with repo scope to push changes
         required: true
 
@@ -34,15 +34,15 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.ref }}
-          token: ${{ secrets.TERRAFORM_DOCS_TOKEN }} # Use PAT for checkout
+          token: ${{ secrets.terraform_docs_token }} # Use PAT for checkout
 
       - name: Render Terraform docs and push changes
         uses: terraform-docs/gh-actions@main
         with:
-          working-dir: ${{ inputs.working-dirs }}
-          output-file: ${{ inputs.output-file }}
-          output-method: ${{ inputs.output-method }}
-          git-push: ${{ inputs.git-push }}
+          working-dir: ${{ inputs.working_dirs }}
+          output-file: ${{ inputs.output_file }}
+          output-method: ${{ inputs.output_method }}
+          git-push: ${{ inputs.git_push }}
           git-push-user-name: github-actions[bot]
           git-push-user-email: github-actions[bot]@users.noreply.github.com
-          git-push-token: ${{ secrets.TERRAFORM_DOCS_TOKEN }} # Use PAT for push
+          git-push-token: ${{ secrets.terraform_docs_token }} # Use PAT for push
