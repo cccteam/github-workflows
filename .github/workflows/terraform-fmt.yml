@@ -3,7 +3,7 @@ name: Terraform Format Check
 on:
   workflow_call:
     inputs:
-      terraform_version:
+      terraform-version:
         description: 'Terraform version to use'
         required: false
         type: string
@@ -21,7 +21,7 @@ jobs:
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: ${{ inputs.terraform_version }}
+          terraform-version: ${{ inputs.terraform-version }}
 
       - name: Find changed Terraform directories
         id: changed-files
