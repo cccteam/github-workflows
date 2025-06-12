@@ -1,0 +1,93 @@
+name: Checkov
+
+on: [push, pull_request, workflow_dispatch]
+
+jobs:
+  scan:
+    permissions:
+      contents: read # for actions/checkout to fetch code
+      actions: read # for private repositories to get Action run status
+      pull-requests: write # for posting and editing comments on PRs
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Checkov GitHub Action
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          output_format: cli
+          output_file_path: console
+          framework: terraform # Explicitly set to scan Terraform (including GCP)
+          soft_fail: true # Prevents workflow from failing on Checkov issues
+          quiet: true # Show only failed checks for cleaner output
+
+      - name: Save Checkov CLI output
+        if: always()
+        run: |
+          mv console results.txt || echo "No issues detected." > results.txt
+        continue-on-error: true
+
+      - name: Post or Update Checkov results to PR
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const output = fs.readFileSync('results.txt', 'utf8').trim();
+            if (output !== 'No issues detected.') {
+              let commentBody = '## Checkov Scan Results\n\n';
+              commentBody += '⚠️ **Issues detected** in the Terraform code:\n\n';
+              commentBody += '```plaintext\n' + output + '\n```\n\n';
+              commentBody += '**Summary**:\n';
+              commentBody += '- Review the issues above and address them to improve security and compliance.\n';
+              commentBody += '- For details on each check, visit [Checkov documentation](https://www.checkov.io/5.Policy%20Index/terraform.html).\n';
+
+              // Find existing Checkov comment
+              const { data: comments } = await github.rest.issues.listComments({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number
+              });
+              const existingComment = comments.find(comment =>
+                comment.body.includes('## Checkov Scan Results') &&
+                comment.user.login === 'github-actions[bot]'
+              );
+
+              if (existingComment) {
+                // Update existing comment
+                await github.rest.issues.updateComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: existingComment.id,
+                  body: commentBody
+                });
+              } else {
+                // Create new comment
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.issue.number,
+                  body: commentBody
+                });
+              }
+            } else {
+              // Optionally delete existing comment if no issues are found
+              const { data: comments } = await github.rest.issues.listComments({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number
+              });
+              const existingComment = comments.find(comment =>
+                comment.body.includes('## Checkov Scan Results') &&
+                comment.user.login === 'github-actions[bot]'
+              );
+              if (existingComment) {
+                await github.rest.issues.deleteComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: existingComment.id
+                });
+              }
+            }
