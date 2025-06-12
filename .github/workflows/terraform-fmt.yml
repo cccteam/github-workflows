@@ -1,0 +1,74 @@
+name: Terraform Format Check
+
+on:
+  workflow_call:
+    inputs:
+      terraform_version:
+        description: 'Terraform version to use'
+        required: false
+        type: string
+        default: '1.12.1'
+
+jobs:
+  terraform-fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Needed for git diff to compare with base branch
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ inputs.terraform_version }}
+
+      - name: Find changed Terraform directories
+        id: changed-files
+        run: |
+          # Get changed .tf and .tfvars files
+          CHANGED_FILES=$(git diff --name-only --diff-filter=ACMRTUXB origin/${{ github.base_ref }}...HEAD | grep -E '\.tf$|\.tfvars$' || true)
+          if [ -z "$CHANGED_FILES" ]; then
+            echo "No .tf or .tfvars files changed. Skipping format check."
+            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "dirs=" >> $GITHUB_OUTPUT
+          else
+            # Get unique directories of changed files
+            CHANGED_DIRS=$(echo "$CHANGED_FILES" | xargs -n 1 dirname | sort -u | tr '\n' ',' | sed 's/,$//')
+            echo "Changed Terraform directories: $CHANGED_DIRS"
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "dirs=$CHANGED_DIRS" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Check Terraform formatting
+        if: steps.changed-files.outputs.changed == 'true'
+        run: |
+          #!/bin/bash
+          set -e
+          if ! command -v terraform &> /dev/null; then
+            echo "Error: Terraform is not installed."
+            exit 1
+          fi
+          FORMATTING_ISSUES=false
+          DIRS="${{ steps.changed-files.outputs.dirs }}"
+          if [ -z "$DIRS" ]; then
+            echo "No directories to check. Skipping."
+            exit 0
+          fi
+          IFS=',' read -ra DIR_ARRAY <<< "$DIRS"
+          for DIR in "${DIR_ARRAY[@]}"; do
+            if [ -d "$DIR" ]; then
+              echo "Checking Terraform formatting in $DIR..."
+              if ! terraform fmt -check -diff -recursive "$DIR"; then
+                FORMATTING_ISSUES=true
+              fi
+            else
+              echo "Warning: Directory $DIR does not exist, skipping."
+            fi
+          done
+          if $FORMATTING_ISSUES; then
+            echo "Error: Terraform files are not formatted correctly."
+            echo "Run 'terraform fmt -recursive' in the affected directories to fix formatting issues."
+            exit 1
+          fi
+          echo "All changed Terraform files are formatted correctly."

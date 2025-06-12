@@ -1,50 +1,48 @@
-name: Generate terraform docs
-permissions: read-all
+name: Terraform Docs Generation
 
 on:
   workflow_call:
     inputs:
-      working-dir:
-        description: The directory where the terraform files are located. This can be a comma separated list of directories in string format. Example - terraform/1-dev,terraform/2-tst,terraform/3-stg,terraform/4-prd
+      working_dirs:
+        description: Comma-separated list of directories containing Terraform configs
         required: true
         type: string
-      output-file:
-        description: The file to write the generated docs to
+      output_file:
+        description: Output file for generated docs
         required: false
         type: string
         default: README.md
-      output-method:
-        description: The method to use to write the generated docs
+      output_method:
+        description: Method to apply the generated docs (e.g., replace, inject)
         required: false
         type: string
         default: replace
-      git-push:
-        description: Whether to push the changes back to the PR
+      git_push:
+        description: Whether to push changes back to the PR
         required: false
         type: boolean
-        default: false
-      token:
-        description: The token to use for git operations
-        required: false
-        type: string
-        default: ${{ github.token }}
+        default: true
+    secrets:
+      terraform_docs_token:
+        description: Personal Access Token with repo scope to push changes
+        required: true
 
 jobs:
-  docs:
+  terraform-docs:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write # For tfdocs to write changes back to PRs
-      pull-requests: write # For tfdocs to write changes back to PRs
-      actions: write # For tfdocs to trigger actions
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.ref }}
-          token: ${{ inputs.token }}
-      - name: Render terraform docs and push changes back to PR
+          token: ${{ secrets.terraform_docs_token }} # Use PAT for checkout
+
+      - name: Render Terraform docs and push changes
         uses: terraform-docs/gh-actions@main
         with:
-          working-dir: ${{ inputs.working-dir }}
-          output-file: ${{ inputs.output-file }}
-          output-method: ${{ inputs.output-method }}
-          git-push: ${{ inputs.git-push }}
+          working-dir: ${{ inputs.working_dirs }}
+          output-file: ${{ inputs.output_file }}
+          output-method: ${{ inputs.output_method }}
+          git-push: ${{ inputs.git_push }}
+          git-push-user-name: github-actions[bot]
+          git-push-user-email: github-actions[bot]@users.noreply.github.com
+          git-push-token: ${{ secrets.terraform_docs_token }} # Use PAT for push
