@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.7.0](https://github.com/cccteam/github-workflows/compare/v5.6.1...v5.7.0) (2025-06-13)
+
+
+### Features
+
+* Add Terraform format check and Trivy scan workflows ([#70](https://github.com/cccteam/github-workflows/issues/70)) ([f13cf73](https://github.com/cccteam/github-workflows/commit/f13cf7396a9b92b9394f088a6fdd9bf8eb75b8dc))
+
 ## [5.6.1](https://github.com/cccteam/github-workflows/compare/v5.6.0...v5.6.1) (2025-05-29)
 
 
