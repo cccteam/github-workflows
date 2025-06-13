@@ -1,0 +1,44 @@
+name: Checkov Terraform Scan (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      output_format:
+        description: 'Output format for Checkov results (e.g., cli or cli,sarif)'
+        required: false
+        type: string
+        default: 'cli'
+      output_file_path:
+        description: 'Output file path for Checkov results (e.g., console or console,results.sarif)'
+        required: false
+        type: string
+        default: 'console'
+      upload_sarif:
+        description: 'Enable or disable SARIF file upload (true/false)'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  scan:
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkov GitHub Action
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          output_format: ${{ inputs.output_format }}
+          output_file_path: ${{ inputs.output_file_path }}
+
+      - name: Upload SARIF file
+        if: ${{ inputs.upload_sarif == true && (success() || failure()) }}
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: results.sarif

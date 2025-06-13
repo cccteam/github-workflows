@@ -28,6 +28,14 @@ This repository provides a collection of reusable GitHub Actions workflow templa
   [`trivy-terraform-scan.yml`](.github/workflows/trivy-terraform-scan.yml):
   Scans changed Terraform files for vulnerabilities, secrets, and misconfigurations using Trivy.
 
+- **Checkov Terraform Scan**
+  [`checkov-terraform-scan.yml`](.github/workflows/checkov-terraform-scan.yml):
+  Scans Terraform code for security and compliance issues using Checkov.
+
+- **TFLint Terraform Check**
+  [`tflint-terraform-check.yml`](.github/workflows/tflint-terraform-check.yml):
+  Runs [TFLint](https://github.com/terraform-linters/tflint) on changed Terraform files to enforce best practices and catch errors.
+
 - **Trunk Check**
   [`trunk-check.yaml`](.github/workflows/trunk-check.yaml):
   Runs [Trunk](https://trunk.io/) checks to enforce code quality and standards.
