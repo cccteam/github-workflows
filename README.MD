@@ -29,7 +29,7 @@ This repository provides a collection of reusable GitHub Actions workflow templa
   Scans changed Terraform files for vulnerabilities, secrets, and misconfigurations using Trivy.
 
 - **Checkov Terraform Scan**
-  [`checkov-terraform-scan.yml`](.github/workflows/checkov-terraform-scan.yml):
+  [`checkov-scan.yml`](.github/workflows/checkov-scan.yml):
   Scans Terraform code for security and compliance issues using Checkov.
 
 - **TFLint Terraform Check**
