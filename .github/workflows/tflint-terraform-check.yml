@@ -1,5 +1,8 @@
 name: TfLint Terraform Check (Reusable)
 
+permissions:
+  contents: read
+
 on:
   workflow_call:
 
@@ -11,7 +14,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Fetch full history for git diff
+          fetch-depth: 0 # Fetch full history for git diff
 
       - name: Set up TFLint
         run: |
