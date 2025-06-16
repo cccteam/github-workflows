@@ -52,6 +52,10 @@ This repository provides a collection of reusable GitHub Actions workflow templa
   [`closes-issue-check.yml`](.github/workflows/closes-issue-check.yml):
   Ensures pull requests reference and close at least one issue.
 
+- **Secret Scanning**
+  [`secret-scanning.yml`](.github/workflows/secret-scanning.yml):
+  Performs secret scanning on the repository using TruffleHog to detect verified and unknown secrets.
+
 ## Usage
 
 To use a workflow, reference it in your repository's workflow YAML using the `workflow_call` event. For example:
