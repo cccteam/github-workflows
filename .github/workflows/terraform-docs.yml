@@ -1,5 +1,9 @@
 name: Terraform Docs Generation (Reusable)
 
+permissions:
+  contents: write
+  pull-requests: write # Optional, if PR metadata is modified
+
 on:
   workflow_call:
     inputs:

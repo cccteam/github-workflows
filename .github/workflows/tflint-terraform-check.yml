@@ -1,0 +1,51 @@
+name: TfLint Terraform Check (Reusable)
+
+permissions:
+  contents: read
+
+on:
+  workflow_call:
+
+jobs:
+  tflint:
+    name: Run TFLint on Changed Files
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Fetch full history for git diff
+
+      - name: Set up TFLint
+        run: |
+          curl -s https://raw.githubusercontent.com/terraform-linters/tflint/master/install_linux.sh | bash
+          tflint --version
+
+      - name: Initialize TFLint
+        run: tflint --init
+
+      - name: Identify changed Terraform files
+        id: changed-files
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git diff --name-only origin/${{ github.base_ref }}...HEAD
+          else
+            git diff --name-only HEAD^ HEAD
+          fi | grep -E '\.tf$|\.tfvars$' > changed_tf_files.txt || true
+          if [ -s changed_tf_files.txt ]; then
+            echo "Terraform files changed:"
+            cat changed_tf_files.txt
+            echo "has_tf_files=true" >> $GITHUB_OUTPUT
+          else
+            echo "No Terraform files changed, skipping TFLint."
+            echo "has_tf_files=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run TFLint on changed files
+        if: steps.changed-files.outputs.has_tf_files == 'true'
+        run: |
+          while IFS= read -r file; do
+            dir=$(dirname "$file")
+            echo "Running TFLint in directory: $dir"
+            tflint --chdir="$dir" --minimum-failure-severity=error
+          done < changed_tf_files.txt

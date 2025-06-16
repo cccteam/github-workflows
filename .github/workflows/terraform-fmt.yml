@@ -1,5 +1,8 @@
 name: Terraform Format Check (Reusable)
 
+permissions:
+  contents: read
+
 on:
   workflow_call:
     inputs:
