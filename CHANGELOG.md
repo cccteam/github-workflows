@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.9.0](https://github.com/cccteam/github-workflows/compare/v5.8.0...v5.9.0) (2025-06-16)
+
+
+### Features
+
+* Add reusable secret scanning workflow with TruffleHog ([#74](https://github.com/cccteam/github-workflows/issues/74)) ([0f0abbb](https://github.com/cccteam/github-workflows/commit/0f0abbb193ab0e9385c96ed5af1d25d5c3492d0a))
+
 ## [5.8.0](https://github.com/cccteam/github-workflows/compare/v5.7.0...v5.8.0) (2025-06-16)
 
 
