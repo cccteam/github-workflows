@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.8.0](https://github.com/cccteam/github-workflows/compare/v5.7.0...v5.8.0) (2025-06-16)
+
+
+### Features
+
+* **workflows:** Add Checkov and TFLint for Terraform code scanning ([#72](https://github.com/cccteam/github-workflows/issues/72)) ([b367b9a](https://github.com/cccteam/github-workflows/commit/b367b9a55b9ff7e5ba49401ad98df683fb1f0033))
+
 ## [5.7.0](https://github.com/cccteam/github-workflows/compare/v5.6.1...v5.7.0) (2025-06-13)
 
 
