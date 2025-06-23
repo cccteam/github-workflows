@@ -36,6 +36,7 @@ jobs:
         with:
           output_format: ${{ inputs.output_format }}
           output_file_path: ${{ inputs.output_file_path }}
+          framework: 'terraform' # Scan terraform files
 
       - name: Upload SARIF file
         if: ${{ inputs.upload_sarif == true && (success() || failure()) }}
