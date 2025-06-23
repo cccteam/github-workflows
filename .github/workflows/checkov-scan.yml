@@ -63,9 +63,3 @@ jobs:
           output_format: ${{ inputs.output_format }}
           output_file_path: ${{ inputs.output_file_path }}
           framework: terraform # Explicitly set to terraform framework
-
-      - name: Upload SARIF file
-        if: ${{ inputs.upload_sarif == true && steps.check-path.outputs.path_changed == 'true' && (success() || failure()) }}
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: results.sarif
