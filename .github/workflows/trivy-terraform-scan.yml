@@ -10,10 +10,6 @@ on:
         description: 'Directory containing Terraform files to check for changes (scanned recursively)'
         required: true
         type: string
-      tfvars_file:
-        description: 'Path to tfvars file to override default values (optional)'
-        required: false
-        type: string
       severity:
         description: 'Severity levels to scan (e.g., CRITICAL,HIGH)'
         required: false
@@ -25,10 +21,10 @@ on:
         type: boolean
         default: true
       exit_code:
-        description: 'Exit code for scan failure (0 to continue, 1 to fail)'
+        description: 'Exit code for scan failure (0 to continue, 1 to fail). Valid values: 0, 1'
         required: false
-        type: string
-        default: '1'
+        type: number
+        default: 1
 
 jobs:
   trivy-terraform-scan:
@@ -38,15 +34,24 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0 # Needed for git diff to compare with base branch
+
+      - name: Validate base_ref
+        run: |
+          if [ -z "${{ github.base_ref }}" ]; then
+            echo "Error: github.base_ref is not set. This workflow is designed for pull requests."
+            exit 1
+          fi
+
       - name: Find changed Terraform directories
         id: changed-files
         run: |
-          if [ ! -d "${{ inputs.scan_dir }}" ]; then
-            echo "Error: Directory ${{ inputs.scan_dir }} does not exist."
+          if [ ! -e "${{ inputs.scan_dir }}" ]; then
+            echo "Error: Path ${{ inputs.scan_dir }} does not exist."
             exit 1
           fi
-          # Get changed .tf and .tfvars files in scan_dir
-          CHANGED_FILES=$(git diff --name-only --diff-filter=ACMRTUXB origin/${{ github.base_ref }}...HEAD | grep -E '\.tf$|\.tfvars$' | grep "^${{ inputs.scan_dir }}" || true)
+          # Sanitize scan_dir to prevent issues with special characters
+          SANITIZED_SCAN_DIR=$(echo "${{ inputs.scan_dir }}" | sed -E 's/[^a-zA-Z0-9./_-]//g')
+          CHANGED_FILES=$(git diff --name-only --diff-filter=ACMRTUXB origin/${{ github.base_ref }}...HEAD | grep -E '\.tf$|\.tfvars$' | grep "^${SANITIZED_SCAN_DIR}" || true)
           if [ -z "$CHANGED_FILES" ]; then
             echo "No .tf or .tfvars files changed in ${{ inputs.scan_dir }}. Skipping scan."
             echo "changed=false" >> $GITHUB_OUTPUT
@@ -58,15 +63,15 @@ jobs:
             echo "changed=true" >> $GITHUB_OUTPUT
             echo "dirs=$CHANGED_DIRS" >> $GITHUB_OUTPUT
           fi
+
       - name: Scan Terraform with Trivy
         if: steps.changed-files.outputs.changed == 'true'
         uses: aquasecurity/trivy-action@0.31.0
         with:
-          scan-type: 'fs'
+          scan-type: 'config'
           scan-ref: ${{ steps.changed-files.outputs.dirs }}
           format: 'table'
           scanners: 'vuln,secret,misconfig'
           severity: ${{ inputs.severity }}
           exit-code: ${{ inputs.exit_code }}
-          tf-vars: ${{ inputs.tfvars_file }}
-          skip-dirs: ${{ inputs.exclude_downloaded_modules == 'true' && '.terraform' || '' }}
+          skip-dirs: ${{ inputs.exclude_downloaded_modules && '.terraform' || '' }}
