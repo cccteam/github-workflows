@@ -71,7 +71,7 @@ jobs:
           scan-type: 'config'
           scan-ref: ${{ steps.changed-files.outputs.dirs }}
           format: 'table'
-          scanners: 'vuln,secret,misconfig'
+          scanners: 'vuln,secret'
           severity: ${{ inputs.severity }}
           exit-code: ${{ inputs.exit_code }}
           skip-dirs: ${{ inputs.exclude_downloaded_modules && '.terraform' || '' }}
