@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.10.0](https://github.com/cccteam/github-workflows/compare/v5.9.0...v5.10.0) (2025-06-23)
+
+
+### Features
+
+* Update README to enhance workflow organization and clarity ([#77](https://github.com/cccteam/github-workflows/issues/77)) ([699a6a6](https://github.com/cccteam/github-workflows/commit/699a6a6bcddc5e55ed891de751e861052b48fe75))
+
 ## [5.9.0](https://github.com/cccteam/github-workflows/compare/v5.8.0...v5.9.0) (2025-06-16)
 
 
