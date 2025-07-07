@@ -56,9 +56,11 @@ This repository provides a collection of reusable GitHub Actions workflow templa
   [`secrets-scanning.yml`](.github/workflows/secrets-scanning.yml):
   Performs secret scanning on the repository using TruffleHog to detect verified and unknown secrets.
 
-- **Bypass Required Status Checks**
-  [`bypass-required-status-checks.yml`](.github/workflows/bypass-required-status-checks.yml):
-  A reusable workflow to determine if a pull request's changes are limited to specified bypass paths, enabling conditional skipping of required status checks.
+
+
+- **Check Paths**
+  [`check-paths.yml`](.github/workflows/check-paths.yml):
+  Determines whether checks should run based on which paths have changed. Can operate in either "exclude" mode (bypass if only specified paths changed) or "include" mode (run if any specified paths changed).
 
 ## Usage
 
@@ -76,7 +78,7 @@ on:
 
 jobs:
   ci:
-    uses: cccteam/github-workflows/.github/workflows/golang-ci.yml@v5.9.0
+    uses: cccteam/github-workflows/.github/workflows/golang-ci.yml@v5.10.0
     with:
       # Workflow-specific inputs here
       go-version: '1.22'
@@ -92,16 +94,27 @@ on:
       - 'terraform/**'
 
 jobs:
+  # Check if we should run Terraform checks based on changed files
+  check-changes:
+    uses: cccteam/github-workflows/.github/workflows/check-paths.yml@v5.10.0
+    with:
+      paths: 'docs/**,*.md'
+      mode: 'exclude'  # Skip checks if only docs or markdown files changed
+
   terraform-fmt:
-    uses: cccteam/github-workflows/.github/workflows/terraform-fmt.yml@v5.9.0
+    needs: check-changes
+    if: ${{ needs.check-changes.outputs.run-checks == 'true' }}
+    uses: cccteam/github-workflows/.github/workflows/terraform-fmt.yml@v5.10.0
 
   terraform-security:
-    uses: cccteam/github-workflows/.github/workflows/trivy-terraform-scan.yml@v5.9.0
+    needs: check-changes
+    if: ${{ needs.check-changes.outputs.run-checks == 'true' }}
+    uses: cccteam/github-workflows/.github/workflows/trivy-terraform-scan.yml@v5.10.0
     with:
       working-directory: 'terraform'
 ```
 
-Refer to each workflow file for available inputs, secrets, and configuration options. When referencing workflows, it's recommended to use a specific version tag (e.g., `@v5.9.0`) rather than `@main` to ensure workflow stability.
+Refer to each workflow file for available inputs, secrets, and configuration options. When referencing workflows, it's recommended to use a specific version tag (e.g., `@v5.10.0`) rather than `@main` to ensure workflow stability.
 
 ## Release Management
 
@@ -119,7 +132,7 @@ The release process is configured in [release-please-config.json](release-please
 
 ### Using a Specific Release Version
 
-When referencing workflows in your repository, always use a specific version tag (e.g., `@v5.9.0`) rather than the branch name to ensure stability. Check the [Releases page](https://github.com/cccteam/github-workflows/releases) for the latest version.
+When referencing workflows in your repository, always use a specific version tag (e.g., `@v5.10.0`) rather than the branch name to ensure stability. Check the [Releases page](https://github.com/cccteam/github-workflows/releases) for the latest version.
 
 ## Contributing
 
