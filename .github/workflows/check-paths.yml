@@ -1,0 +1,58 @@
+name: Check Paths
+
+on:
+  workflow_call:
+    inputs:
+      paths:
+        description: 'Comma-separated list of paths to check (e.g., terraform/**,docs/**)'
+        required: true
+        type: string
+      mode:
+        description: 'Mode of operation: "exclude" (bypass if only specified paths changed) or "include" (run if any specified paths changed)'
+        required: true
+        type: string
+        default: 'exclude'
+    outputs:
+      run-checks:
+        description: 'True if checks should run, false if they should be bypassed'
+        value: ${{ jobs.check-changes.outputs.run-checks }}
+
+jobs:
+  check-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      run-checks: ${{ steps.check.outputs.run-checks }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0  # Fetch full history for diff
+      - name: Check paths based on mode
+        id: check
+        env:
+          PATHS: ${{ inputs.paths }}
+          MODE: ${{ inputs.mode }}
+        run: |
+          # Convert comma-separated paths to grep -E pattern (e.g., '^path1/|^path2/')
+          PATTERNS=$(echo "$PATHS" | sed 's/,/\\|/g' | sed 's/\*\*/.*/g' | sed 's/\*/[^/]*\/*/g' | sed 's/^/\\^/' | sed 's/$/\\//')
+          CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }})
+
+          if [ "$MODE" = "exclude" ]; then
+            # Exclude mode: run checks if any non-specified paths changed
+            NON_PATH_FILES=$(echo "$CHANGED_FILES" | grep -v -E "$PATTERNS" || true)
+            if [ -z "$NON_PATH_FILES" ] && [ -n "$CHANGED_FILES" ]; then
+              echo "run-checks=false" >> $GITHUB_OUTPUT
+            else
+              echo "run-checks=true" >> $GITHUB_OUTPUT
+            fi
+          elif [ "$MODE" = "include" ]; then
+            # Include mode: run checks if any specified paths changed
+            MATCHING_FILES=$(echo "$CHANGED_FILES" | grep -E "$PATTERNS" || true)
+            if [ -n "$MATCHING_FILES" ]; then
+              echo "run-checks=true" >> $GITHUB_OUTPUT
+            else
+              echo "run-checks=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "Invalid mode: $MODE"
+            exit 1
+          fi

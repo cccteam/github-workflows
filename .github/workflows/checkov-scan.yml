@@ -35,7 +35,6 @@ jobs:
         uses: bridgecrewio/checkov-action@99bb2caf247dfd9f03cf984373bc6043d4e32ebf # v12
         with:
           output_format: ${{ inputs.output_format }}
-          output_file_path: ${{ inputs.output_file_path }}
           framework: 'terraform' # Scan terraform files
           quiet: true
 
