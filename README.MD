@@ -56,6 +56,10 @@ This repository provides a collection of reusable GitHub Actions workflow templa
   [`secrets-scanning.yml`](.github/workflows/secrets-scanning.yml):
   Performs secret scanning on the repository using TruffleHog to detect verified and unknown secrets.
 
+- **Bypass Required Status Checks**
+  [`bypass-required-status-checks.yml`](.github/workflows/bypass-required-status-checks.yml):
+  A reusable workflow to determine if a pull request's changes are limited to specified bypass paths, enabling conditional skipping of required status checks.
+
 ## Usage
 
 To use a reusable workflow in your repository, create a workflow file in your `.github/workflows` directory that references one of the workflows in this repository using the `workflow_call` event.
