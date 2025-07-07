@@ -1,0 +1,37 @@
+name: Check Bypass Paths
+
+on:
+  workflow_call:
+    inputs:
+      bypass-paths:
+        description: 'Comma-separated list of paths to bypass (e.g., terraform/**,docs/**)'
+        required: true
+        type: string
+    outputs:
+      bypass-only:
+        description: 'True if changes are only in the specified bypass paths, false otherwise'
+        value: ${{ jobs.check-changes.outputs.bypass-only }}
+
+jobs:
+  check-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      bypass-only: ${{ steps.check.outputs.bypass-only }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0  # Fetch full history for diff
+      - name: Check if changes are only in bypass paths
+        id: check
+        env:
+          BYPASS_PATHS: ${{ inputs.bypass-paths }}
+        run: |
+          # Convert comma-separated paths to grep -E pattern (e.g., '^path1/|^path2/')
+          PATTERNS=$(echo "$BYPASS_PATHS" | sed 's/,/\\|/g' | sed 's/\*\*/.*/g' | sed 's/\*/[^/]*\/*/g' | sed 's/^/\\^/' | sed 's/$/\\//')
+          CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }})
+          NON_BYPASS_FILES=$(echo "$CHANGED_FILES" | grep -v -E "$PATTERNS" || true)
+          if [ -z "$NON_BYPASS_FILES" ]; then
+            echo "bypass-only=true" >> $GITHUB_OUTPUT
+          else
+            echo "bypass-only=false" >> $GITHUB_OUTPUT
+          fi
