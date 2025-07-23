@@ -32,3 +32,4 @@ jobs:
             ci
             upgrade
             infra
+            config
