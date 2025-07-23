@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.11.0](https://github.com/cccteam/github-workflows/compare/v5.10.0...v5.11.0) (2025-07-23)
+
+
+### Features
+
+* Support config as a semantic PR title type ([#80](https://github.com/cccteam/github-workflows/issues/80)) ([663a3f0](https://github.com/cccteam/github-workflows/commit/663a3f0bb0081a9ac1c1244201b56ac2004bb0fe))
+
 ## [5.10.0](https://github.com/cccteam/github-workflows/compare/v5.9.0...v5.10.0) (2025-06-23)
 
 
