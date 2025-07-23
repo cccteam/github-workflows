@@ -143,7 +143,7 @@ jobs:
           cache-dependency-path: ${{ matrix.module-dir }}/go.sum
 
       - name: golangci-lint ${{ matrix.module-dir }}
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v8
         with:
           # The version of golangci-lint is required and must be specified without patch version: we always use the latest patch version.
           version: ${{ inputs.golangci-lint-version }}
