@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.12.0](https://github.com/cccteam/github-workflows/compare/v5.11.0...v5.12.0) (2025-08-11)
+
+
+### Features
+
+* **workflow:** Add Angular Check workflow for project checks ([#84](https://github.com/cccteam/github-workflows/issues/84)) ([ccc2cb9](https://github.com/cccteam/github-workflows/commit/ccc2cb9450cc358404825f6983333fc09f94ef32))
+
 ## [5.11.0](https://github.com/cccteam/github-workflows/compare/v5.10.0...v5.11.0) (2025-07-23)
 
 
