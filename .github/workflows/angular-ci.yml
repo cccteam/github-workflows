@@ -1,4 +1,4 @@
-name: Angular Check
+name: Angular CI Workflow Template
 
 on:
   workflow_call:
@@ -76,5 +76,3 @@ jobs:
               echo "::endgroup::"
             fi
           done
-        env:
-          APP_DEPLOYMENT: ${{ inputs.app-deployment }}
