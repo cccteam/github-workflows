@@ -14,7 +14,7 @@ on:
         type: string
         default: './gui'
       commands:
-        description: 'List of npm commands to run. These come from the "scripts" section in your project's package.json.'
+        description: 'List of npm commands to run. These come from the "scripts" section in your project''s package.json.'
         required: false
         type: string
         default: '["build", "lint"]'
