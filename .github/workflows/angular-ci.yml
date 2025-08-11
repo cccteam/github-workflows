@@ -13,11 +13,11 @@ on:
         required: false
         type: string
         default: './gui'
-      run-tests:
-        description: 'Whether to run tests'
+      checks:
+        description: 'List of checks to run (build, lint, test)'
         required: false
-        type: boolean
-        default: false
+        type: string
+        default: '["build", "lint"]'
 
 jobs:
   angular:
@@ -54,20 +54,31 @@ jobs:
         working-directory: ${{ inputs.working-directory }}
         run: |
           projects='${{ steps.find-projects.outputs.projects }}'
+          checks='${{ inputs.checks }}'
           echo "Running checks for projects: $projects"
+          echo "Checks to run: $checks"
 
           for project in $(echo $projects | jq -r '.[]'); do
-            echo "::group::Linting $project"
-            npm run lint $project
-            echo "::endgroup::"
-
-            echo "::group::Building $project"
-            npm run build $project
-            echo "::endgroup::"
-
-            if [ "${{ inputs.run-tests }}" = "true" ]; then
-              echo "::group::Testing $project"
-              npm run test $project -- --watch=false --browsers=ChromeHeadless
-              echo "::endgroup::"
-            fi
+            for check in $(echo $checks | jq -r '.[]'); do
+              case $check in
+                "lint")
+                  echo "::group::Linting $project"
+                  npm run lint $project
+                  echo "::endgroup::"
+                  ;;
+                "build")
+                  echo "::group::Building $project"
+                  npm run build $project
+                  echo "::endgroup::"
+                  ;;
+                "test")
+                  echo "::group::Testing $project"
+                  npm run test $project -- --watch=false --browsers=ChromeHeadless
+                  echo "::endgroup::"
+                  ;;
+                *)
+                  echo "Unknown check type: $check"
+                  ;;
+              esac
+            done
           done
