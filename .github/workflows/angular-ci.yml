@@ -13,7 +13,7 @@ on:
         required: false
         type: string
         default: './gui'
-      checks:
+      commands:
         description: 'List of npm script names to run'
         required: false
         type: string
@@ -21,7 +21,7 @@ on:
 
 jobs:
   angular:
-    name: Run Angular checks
+    name: Run Angular commands
     runs-on: ubuntu-latest
     steps:
       - name: Check out code
@@ -50,18 +50,18 @@ jobs:
         working-directory: ${{ inputs.working-directory }}
         run: npm ci
 
-      - name: Run checks for each project
+      - name: Run commands for each project
         working-directory: ${{ inputs.working-directory }}
         run: |
           projects='${{ steps.find-projects.outputs.projects }}'
-          checks='${{ inputs.checks }}'
-          echo "Running checks for projects: $projects"
-          echo "Checks to run: $checks"
+          commands='${{ inputs.commands }}'
+          echo "Running commands for projects: $projects"
+          echo "Commands to run: $commands"
 
           for project in $(echo $projects | jq -r '.[]'); do
-            for check in $(echo $checks | jq -r '.[]'); do
-              echo "::group::Running $check for $project"
-              npm run $check $project || npm run $check
+            for command in $(echo $commands | jq -r '.[]'); do
+              echo "::group::Running $command for $project"
+              npm run $command $project || npm run $command
               echo "::endgroup::"
             done
           done
