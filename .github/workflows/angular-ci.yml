@@ -1,0 +1,67 @@
+name: Angular CI Workflow Template
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        description: 'Node.js version to use'
+        required: false
+        type: string
+        default: '24'
+      working-directory:
+        description: 'Directory containing Angular projects'
+        required: false
+        type: string
+        default: './gui'
+      commands:
+        description: 'List of npm commands to run. These come from the "scripts" section in your project's package.json.'
+        required: false
+        type: string
+        default: '["build", "lint"]'
+
+jobs:
+  angular:
+    name: Run Angular commands
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Find Angular projects
+        id: find-projects
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          if [ -f angular.json ]; then
+            # Extract project names from angular.json
+            projects=$(jq -r '.projects | keys | @json' angular.json)
+            echo "projects=$projects" >> $GITHUB_OUTPUT
+            echo "Found Angular projects: $projects"
+          else
+            echo "projects=[]" >> $GITHUB_OUTPUT
+            echo "No angular.json found"
+          fi
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      - name: Install dependencies
+        working-directory: ${{ inputs.working-directory }}
+        run: npm ci
+
+      - name: Run commands for each project
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          projects='${{ steps.find-projects.outputs.projects }}'
+          commands='${{ inputs.commands }}'
+          echo "Running commands for projects: $projects"
+          echo "Commands to run: $commands"
+
+          for project in $(echo $projects | jq -r '.[]'); do
+            for command in $(echo $commands | jq -r '.[]'); do
+              echo "::group::Running $command for $project"
+              npm run $command $project || npm run $command
+              echo "::endgroup::"
+            done
+          done
