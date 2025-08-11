@@ -6,9 +6,9 @@ This repository provides a collection of reusable GitHub Actions workflow templa
 
 ### Angular Workflows
 
-- **Angular Check**
-  [`angular-check.yml`](.github/workflows/angular-check.yml):
-  Runs Angular project checks including linting, building, and optional testing for all projects defined in angular.json.
+- **Angular CI**
+  [`angular-ci.yml`](.github/workflows/angular-ci.yml):
+  Runs Angular project checks including linting, building, and optional testing for all projects defined in angular.json. Configurable to run specific checks (build, lint, test) with defaults of build and lint.
 
 ### Go Workflows
 
@@ -95,13 +95,26 @@ on:
     branches: [master]
 
 jobs:
+  # Run default checks (build and lint)
   angular-check:
-    uses: cccteam/github-workflows/.github/workflows/angular-check.yml@v5.9.0
+    uses: cccteam/github-workflows/.github/workflows/angular-ci.yml@v5.9.0
     with:
       node-version: '20'
       working-directory: './frontend'
-      app-deployment: 'dev'
-      run-tests: true
+
+  # Run all checks including tests
+  angular-full-check:
+    uses: cccteam/github-workflows/.github/workflows/angular-ci.yml@v5.9.0
+    with:
+      node-version: '20'
+      working-directory: './frontend'
+      checks: '["build", "lint", "test"]'
+
+  # Run only specific checks
+  angular-build-only:
+    uses: cccteam/github-workflows/.github/workflows/angular-ci.yml@v5.9.0
+    with:
+      checks: '["build"]'
 ```
 
 ### Advanced Example with Multiple Workflows
