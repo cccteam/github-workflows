@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.12.1](https://github.com/cccteam/github-workflows/compare/v5.12.0...v5.12.1) (2025-08-11)
+
+
+### Documentation
+
+* Fix ' in commands description in Angular CI workflow ([#86](https://github.com/cccteam/github-workflows/issues/86)) ([e61ba6e](https://github.com/cccteam/github-workflows/commit/e61ba6e77e7cf98fb4af692bbe842b24990eef5c))
+
 ## [5.12.0](https://github.com/cccteam/github-workflows/compare/v5.11.0...v5.12.0) (2025-08-11)
 
 
