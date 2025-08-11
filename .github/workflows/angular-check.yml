@@ -1,0 +1,80 @@
+name: Angular Check
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        description: 'Node.js version to use'
+        required: false
+        type: string
+        default: '24'
+      working-directory:
+        description: 'Directory containing Angular projects'
+        required: false
+        type: string
+        default: './gui'
+      app-deployment:
+        description: 'App deployment environment'
+        required: false
+        type: string
+        default: 'prd'
+      run-tests:
+        description: 'Whether to run tests'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  angular:
+    name: Run Angular checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Find Angular projects
+        id: find-projects
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          if [ -f angular.json ]; then
+            # Extract project names from angular.json
+            projects=$(jq -r '.projects | keys | @json' angular.json)
+            echo "projects=$projects" >> $GITHUB_OUTPUT
+            echo "Found Angular projects: $projects"
+          else
+            echo "projects=[]" >> $GITHUB_OUTPUT
+            echo "No angular.json found"
+          fi
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      - name: Install dependencies
+        working-directory: ${{ inputs.working-directory }}
+        run: npm ci
+
+      - name: Run checks for each project
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          projects='${{ steps.find-projects.outputs.projects }}'
+          echo "Running checks for projects: $projects"
+
+          for project in $(echo $projects | jq -r '.[]'); do
+            echo "::group::Linting $project"
+            npm run lint $project
+            echo "::endgroup::"
+
+            echo "::group::Building $project"
+            npm run build $project
+            echo "::endgroup::"
+
+            if [ "${{ inputs.run-tests }}" = "true" ]; then
+              echo "::group::Testing $project"
+              npm run test $project -- --watch=false --browsers=ChromeHeadless
+              echo "::endgroup::"
+            fi
+          done
+        env:
+          APP_DEPLOYMENT: ${{ inputs.app-deployment }}

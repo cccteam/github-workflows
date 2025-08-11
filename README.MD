@@ -4,6 +4,12 @@ This repository provides a collection of reusable GitHub Actions workflow templa
 
 ## Available Workflows
 
+### Angular Workflows
+
+- **Angular Check**
+  [`angular-check.yml`](.github/workflows/angular-check.yml):
+  Runs Angular project checks including linting, building, and optional testing for all projects defined in angular.json.
+
 ### Go Workflows
 
 - **Golang CI Workflow**
@@ -66,9 +72,9 @@ To use a reusable workflow in your repository, create a workflow file in your `.
 name: CI
 on:
   push:
-    branches: [main]
+    branches: [master]
   pull_request:
-    branches: [main]
+    branches: [master]
 
 jobs:
   ci:
@@ -76,6 +82,26 @@ jobs:
     with:
       # Workflow-specific inputs here
       go-version: '1.22'
+```
+
+### Angular Example
+
+```yaml
+name: Angular CI
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  angular-check:
+    uses: cccteam/github-workflows/.github/workflows/angular-check.yml@v5.9.0
+    with:
+      node-version: '20'
+      working-directory: './frontend'
+      app-deployment: 'dev'
+      run-tests: true
 ```
 
 ### Advanced Example with Multiple Workflows
@@ -97,11 +123,11 @@ jobs:
       working-directory: 'terraform'
 ```
 
-Refer to each workflow file for available inputs, secrets, and configuration options. When referencing workflows, it's recommended to use a specific version tag (e.g., `@v5.9.0`) rather than `@main` to ensure workflow stability.
+Refer to each workflow file for available inputs, secrets, and configuration options. When referencing workflows, it's recommended to use a specific version tag (e.g., `@v5.9.0`) rather than `@master` to ensure workflow stability.
 
 ## Release Management
 
-This repository uses [release-please](https://github.com/googleapis/release-please) for automated releases. When pull requests are merged to the main branch:
+This repository uses [release-please](https://github.com/googleapis/release-please) for automated releases. When pull requests are merged to the master branch:
 
 1. Release-please automatically determines the next version based on [Conventional Commits](https://www.conventionalcommits.org/)
 2. A release PR is created or updated with changelog entries
