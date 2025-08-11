@@ -13,11 +13,6 @@ on:
         required: false
         type: string
         default: './gui'
-      app-deployment:
-        description: 'App deployment environment'
-        required: false
-        type: string
-        default: 'prd'
       run-tests:
         description: 'Whether to run tests'
         required: false
