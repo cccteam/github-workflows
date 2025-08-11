@@ -14,7 +14,7 @@ on:
         type: string
         default: './gui'
       checks:
-        description: 'List of checks to run (build, lint, test)'
+        description: 'List of npm script names to run'
         required: false
         type: string
         default: '["build", "lint"]'
@@ -60,25 +60,8 @@ jobs:
 
           for project in $(echo $projects | jq -r '.[]'); do
             for check in $(echo $checks | jq -r '.[]'); do
-              case $check in
-                "lint")
-                  echo "::group::Linting $project"
-                  npm run lint $project
-                  echo "::endgroup::"
-                  ;;
-                "build")
-                  echo "::group::Building $project"
-                  npm run build $project
-                  echo "::endgroup::"
-                  ;;
-                "test")
-                  echo "::group::Testing $project"
-                  npm run test $project -- --watch=false --browsers=ChromeHeadless
-                  echo "::endgroup::"
-                  ;;
-                *)
-                  echo "Unknown check type: $check"
-                  ;;
-              esac
+              echo "::group::Running $check for $project"
+              npm run $check $project || npm run $check
+              echo "::endgroup::"
             done
           done

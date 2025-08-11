@@ -8,7 +8,7 @@ This repository provides a collection of reusable GitHub Actions workflow templa
 
 - **Angular CI**
   [`angular-ci.yml`](.github/workflows/angular-ci.yml):
-  Runs Angular project checks including linting, building, and optional testing for all projects defined in angular.json. Configurable to run specific checks (build, lint, test) with defaults of build and lint.
+  Runs configurable npm scripts for all Angular projects defined in angular.json. Supports any npm script names defined in package.json with defaults of build and lint.
 
 ### Go Workflows
 
@@ -102,13 +102,13 @@ jobs:
       node-version: '20'
       working-directory: './frontend'
 
-  # Run all checks including tests
+  # Run custom npm scripts
   angular-full-check:
     uses: cccteam/github-workflows/.github/workflows/angular-ci.yml@v5.9.0
     with:
       node-version: '20'
       working-directory: './frontend'
-      checks: '["build", "lint", "test"]'
+      checks: '["build", "lint", "test", "audit", "format:check"]'
 
   # Run only specific checks
   angular-build-only:
@@ -116,6 +116,20 @@ jobs:
     with:
       checks: '["build"]'
 ```
+
+#### Common Angular npm Scripts
+
+The Angular CI workflow can run any npm script defined in your `package.json`. Common examples include:
+
+- `build` - Build the application
+- `lint` - Run ESLint
+- `test` - Run unit tests
+- `e2e` - Run end-to-end tests
+- `audit` - Security vulnerability scanning
+- `format:check` - Code formatting validation
+- `typecheck` - TypeScript type checking
+- `bundle-analyzer` - Bundle size analysis
+- `docs` - Generate documentation
 
 ### Advanced Example with Multiple Workflows
 
