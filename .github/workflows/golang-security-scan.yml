@@ -118,7 +118,7 @@ jobs:
         run: go install golang.org/x/vuln/cmd/govulncheck@${{ inputs.govulncheck-version }}
         shell: bash
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ matrix.checkout-ref }}
           fetch-tags: true
@@ -171,7 +171,7 @@ jobs:
           echo "REPORT_NAME=trivy-${{ matrix.checkout-ref == '' && '1' || '2' }}" >> $GITHUB_ENV
           echo "REPORT_PATH=trivy-report-${{ matrix.checkout-ref == '' && '1' || '2' }}.txt" >> $GITHUB_ENV
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ matrix.checkout-ref }}
           fetch-tags: true
@@ -218,7 +218,7 @@ jobs:
     if: ${{ inputs.execute-dependabot-check }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Prepare ignored alerts file
         run: |
@@ -307,12 +307,12 @@ jobs:
             echo "should_run=false" >> $GITHUB_OUTPUT
           fi
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         if: steps.setup.outputs.should_run == 'true'
         with:
           name: ${{ matrix.label }}-1
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         if: steps.setup.outputs.should_run == 'true' && inputs.scan-latest-release && matrix.label != 'dependabot'
         with:
           name: ${{ matrix.label }}-2
@@ -409,21 +409,21 @@ jobs:
     steps:
       - name: Download govulncheck issue artifact
         if: needs.govulncheck.result == 'failure'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: govulncheck-issue
         continue-on-error: true # Continue if the artifact is not found
 
       - name: Download trivy issue artifact
         if: inputs.execute-trivy-scan && needs.trivy.result == 'failure'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: trivy-issue
         continue-on-error: true # Continue if the artifact is not found
 
       - name: Download dependabot issue artifact
         if: inputs.execute-dependabot-check && needs.dependabot.result == 'failure'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: dependabot-issue
         continue-on-error: true # Continue if the artifact is not found
@@ -448,7 +448,7 @@ jobs:
           echo "$MESSAGE" >> $GITHUB_ENV
           echo 'EOF' >> $GITHUB_ENV
 
-      - uses: slackapi/slack-github-action@v1.26.0
+      - uses: slackapi/slack-github-action@v2.1.1
         with:
           channel-id: ${{ inputs.slack-channel-id || secrets.SLACK_CHANNEL_ID }}
           slack-message: ${{ env.SLACK_MESSAGE }}
