@@ -1,5 +1,18 @@
 # Changelog
 
+## [5.12.2](https://github.com/cccteam/github-workflows/compare/v5.12.1...v5.12.2) (2025-08-22)
+
+
+### Bug Fixes
+
+* Fix detect-modules for situation where no release-please config exists ([#89](https://github.com/cccteam/github-workflows/issues/89)) ([ea7dc08](https://github.com/cccteam/github-workflows/commit/ea7dc08cb4ded3b6976dd2a560cf4202ea94d9ce))
+
+
+### Code Upgrade
+
+* **deps:** Bump the github-actions group across 1 directory with 9 updates ([#88](https://github.com/cccteam/github-workflows/issues/88)) ([adf9936](https://github.com/cccteam/github-workflows/commit/adf993665b91abc75101de22b1a2c5e29c5c0065))
+* golangci-lint will now need to be upgraded to 2.0+ ([#88](https://github.com/cccteam/github-workflows/issues/88)) ([adf9936](https://github.com/cccteam/github-workflows/commit/adf993665b91abc75101de22b1a2c5e29c5c0065))
+
 ## [5.12.1](https://github.com/cccteam/github-workflows/compare/v5.12.0...v5.12.1) (2025-08-11)
 
 
