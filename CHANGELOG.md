@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.12.3](https://github.com/cccteam/github-workflows/compare/v5.12.2...v5.12.3) (2025-08-22)
+
+
+### Bug Fixes
+
+* Add runner configuration option to Angular CI ([#91](https://github.com/cccteam/github-workflows/issues/91)) ([34b1685](https://github.com/cccteam/github-workflows/commit/34b168568b0dfbd30d1785849e60bf372ff7d3c0))
+
 ## [5.12.2](https://github.com/cccteam/github-workflows/compare/v5.12.1...v5.12.2) (2025-08-22)
 
 
