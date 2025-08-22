@@ -3,16 +3,20 @@ name: Angular CI Workflow Template
 on:
   workflow_call:
     inputs:
+      runs-on:
+        required: false
+        type: string
+        default: "ubuntu-latest"
       node-version:
-        description: 'Node.js version to use'
+        description: "Node.js version to use"
         required: false
         type: string
-        default: '24'
+        default: "24"
       working-directory:
-        description: 'Directory containing Angular projects'
+        description: "Directory containing Angular projects"
         required: false
         type: string
-        default: './gui'
+        default: "./gui"
       commands:
         description: 'List of npm commands to run. These come from the "scripts" section in your project''s package.json.'
         required: false
@@ -22,7 +26,7 @@ on:
 jobs:
   angular:
     name: Run Angular commands
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runs-on }}
     steps:
       - name: Check out code
         uses: actions/checkout@v5
