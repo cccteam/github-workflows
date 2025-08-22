@@ -191,7 +191,7 @@ jobs:
 
       - name: Run Trivy vulnerability scanner (capture findings)
         id: trivy_scan
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@0.32.0
         with:
           image-ref: "${{ env.REPO_NAME }}:latest"
           format: "table"
