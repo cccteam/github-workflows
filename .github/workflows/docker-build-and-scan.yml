@@ -67,7 +67,7 @@ jobs:
           docker build $BUILD_ARGS -t $repo_name:latest -f ${{ inputs.dockerfile }} .
 
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@0.32.0
+        uses: aquasecurity/trivy-action@0.33.0
         with:
           image-ref: "${{ env.REPO_NAME }}:latest"
           format: "table"
