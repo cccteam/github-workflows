@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.12.4](https://github.com/cccteam/github-workflows/compare/v5.12.3...v5.12.4) (2025-09-04)
+
+
+### Code Refactoring
+
+* Skip doing the work when no changes detected in a module instead of not running the action. ([#94](https://github.com/cccteam/github-workflows/issues/94)) ([b6b59e3](https://github.com/cccteam/github-workflows/commit/b6b59e3c52d5f09b67c25ec7626dff1f7d347902))
+
 ## [5.12.3](https://github.com/cccteam/github-workflows/compare/v5.12.2...v5.12.3) (2025-08-22)
 
 
