@@ -40,15 +40,18 @@ jobs:
   detect-modules:
     runs-on: ${{ inputs.runs-on }}
     outputs:
-      module-dir: ${{ steps.set-modules.outputs.module-dir }}
+      modules: ${{ steps.set-modules.outputs.modules }}
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
       - id: set-modules
         # compares the go modules from `release-please-config.json` in each repo to the directories with git diffs
-        run: >-
-          echo "module-dir=$(jq -cnS --argjson packages $(cat release-please-config.json 2>/dev/null | jq -csS --arg workingDir ${{ inputs.working-directory }} 'if length == 0 then ["\($workingDir)"] else ( ((.[0].packages | keys?) // []) | if length == 0 then ["\($workingDir)"] else map("\($workingDir)/\(.)") end) end') --argjson changed_dirs $(git diff --name-only --line-prefix='./' refs/remotes/origin/master HEAD | awk -F "/*[^/]*/*$" '{ print ($1 == "." ? "./." : $1); }' | cut -d "/" -f1-2 | sort | uniq | jq -ncRS '[inputs]') '$packages | map(select(. as $pkg | $changed_dirs | index($pkg)))' | awk '{ print ($1 == "[]" ? "[\"./.\"]" : $1); }')" >> $GITHUB_OUTPUT
+        run: |
+          all_module_dirs=$(cat release-please-config.json 2>/dev/null | jq -csS --arg workingDir ${{ inputs.working-directory }} 'if length == 0 then ["\($workingDir)"] else ( ((.[0].packages | keys?) // []) | if length == 0 then ["\($workingDir)"] else map("\($workingDir)/\(.)") end) end')
+          changed_module_dirs=$(jq -cnS --argjson packages $all_module_dirs --argjson changed_module_dirs $(git diff --name-only --line-prefix='./' refs/remotes/origin/master HEAD | awk -F "/*[^/]*/*$" '{ print ($1 == "." ? "./." : $1); }' | cut -d "/" -f1-2 | sort | uniq | jq -ncRS '[inputs]') '$packages | map(select(. as $pkg | $changed_module_dirs | index($pkg)))' | awk '{ print ($1 == "[]" ? "[\"./.\"]" : $1); }')
+          modules=$(echo $all_module_dirs | jq -c --argjson changed_module_dirs "$changed_module_dirs" 'map(. as $dir | {dir: $dir, has_changes: ($changed_module_dirs | index($dir) != null)})')
+          echo "modules=$modules" >> $GITHUB_OUTPUT
 
   go-generate-diff:
     name: Check for go generate changes
@@ -56,25 +59,34 @@ jobs:
     runs-on: ${{ inputs.runs-on }}
     strategy:
       matrix:
-        module-dir: ${{ fromJson(needs.detect-modules.outputs.module-dir) }}
+        modules: ${{ fromJson(needs.detect-modules.outputs.modules) }}
     steps:
+      - name: Skip if no changes
+        if: ${{ matrix.modules.has_changes == false }}
+        run: echo "No changes detected in ${{ matrix.modules.dir }}. Skipping go generate."
+
       - name: Check out code into the Go module directory
+        if: ${{ matrix.modules.has_changes == true }}
         uses: actions/checkout@v5
 
       - name: Set up Go for app
+        if: ${{ matrix.modules.has_changes == true }}
         uses: actions/setup-go@v5
         with:
-          go-version-file: ${{ matrix.module-dir }}/go.mod
-          cache-dependency-path: ${{ matrix.module-dir }}/go.sum
+          go-version-file: ${{ matrix.modules.dir }}/go.mod
+          cache-dependency-path: ${{ matrix.modules.dir }}/go.sum
 
       - name: Install mockgen
+        if: ${{ matrix.modules.has_changes == true }}
         run: go install go.uber.org/mock/mockgen@latest
 
       - name: Run go generate
+        if: ${{ matrix.modules.has_changes == true }}
         run: go generate ./...
-        working-directory: ${{ matrix.module-dir }}
+        working-directory: ${{ matrix.modules.dir }}
 
       - name: Check for go generate changes
+        if: ${{ matrix.modules.has_changes == true }}
         run: |
           if [[ -n "$(git status --porcelain)" ]]; then
             echo "Changes were found after running go generate. Please run it and commit the changes."
@@ -89,24 +101,32 @@ jobs:
     strategy:
       matrix:
         build-tag: ${{ fromJson(inputs.build-tags) }}
-        module-dir: ${{ fromJson(needs.detect-modules.outputs.module-dir) }}
+        modules: ${{ fromJson(needs.detect-modules.outputs.modules) }}
     steps:
+      - name: Skip if no changes
+        if: ${{ matrix.modules.has_changes == false }}
+        run: echo "No changes detected in ${{ matrix.modules.dir }}. Skipping build and tests."
+
       - name: Check out code into the Go module directory
+        if: ${{ matrix.modules.has_changes == true }}
         uses: actions/checkout@v5
 
       - name: Set up Go for app
+        if: ${{ matrix.modules.has_changes == true }}
         uses: actions/setup-go@v5
         with:
-          go-version-file: ${{ matrix.module-dir }}/go.mod
-          cache-dependency-path: ${{ matrix.module-dir }}/go.sum
+          go-version-file: ${{ matrix.modules.dir }}/go.mod
+          cache-dependency-path: ${{ matrix.modules.dir }}/go.sum
 
       - name: Run tests with race detection
+        if: ${{ matrix.modules.has_changes == true }}
         run: go test ${{ matrix.build-tag != '' && format('-tags {0}', matrix.build-tag) || '' }} -v -race ./...
-        working-directory: ${{ matrix.module-dir }}
+        working-directory: ${{ matrix.modules.dir }}
 
       - name: Run build
+        if: ${{ matrix.modules.has_changes == true }}
         run: go build ${{ matrix.build-tag != '' && format('-tags {0}', matrix.build-tag) || '' }}
-        working-directory: ${{ matrix.module-dir }}
+        working-directory: ${{ matrix.modules.dir }}
 
   govulncheck:
     name: Go Vulnerability Check
@@ -114,15 +134,20 @@ jobs:
     runs-on: ${{ inputs.runs-on }}
     strategy:
       matrix:
-        module-dir: ${{ fromJson(needs.detect-modules.outputs.module-dir) }}
+        modules: ${{ fromJson(needs.detect-modules.outputs.modules) }}
     steps:
-      - name: govulncheck ${{ matrix.module-dir }}
+      - name: Skip if no changes
+        if: ${{ matrix.modules.has_changes == false }}
+        run: echo "No changes detected in ${{ matrix.modules.dir }}. Skipping vuln check."
+
+      - name: govulncheck ${{ matrix.modules.dir }}
+        if: ${{ matrix.modules.has_changes == true }}
         # NOTE: Repo checkout and go setup are handled within 'govulncheck-action'
         uses: golang/govulncheck-action@v1
         with:
-          go-version-file: ${{ matrix.module-dir }}/go.mod
+          go-version-file: ${{ matrix.modules.dir }}/go.mod
           go-package: ./...
-          work-dir: ${{ matrix.module-dir }}
+          work-dir: ${{ matrix.modules.dir }}
 
   linter:
     name: Run golangci-lint
@@ -131,18 +156,25 @@ jobs:
     strategy:
       matrix:
         build-tag: ${{ fromJson(inputs.build-tags) }}
-        module-dir: ${{ fromJson(needs.detect-modules.outputs.module-dir) }}
+        modules: ${{ fromJson(needs.detect-modules.outputs.modules) }}
     steps:
+      - name: Skip if no changes
+        if: ${{ matrix.modules.has_changes == false }}
+        run: echo "No changes detected in ${{ matrix.modules.dir }}. Skipping linter."
+
       - name: Check out code into the Go module directory
+        if: ${{ matrix.modules.has_changes == true }}
         uses: actions/checkout@v5
 
       - name: Set up Go for app
+        if: ${{ matrix.modules.has_changes == true }}
         uses: actions/setup-go@v5
         with:
-          go-version-file: ${{ matrix.module-dir }}/go.mod
-          cache-dependency-path: ${{ matrix.module-dir }}/go.sum
+          go-version-file: ${{ matrix.modules.dir }}/go.mod
+          cache-dependency-path: ${{ matrix.modules.dir }}/go.sum
 
-      - name: golangci-lint ${{ matrix.module-dir }}
+      - name: golangci-lint ${{ matrix.modules.dir }}
+        if: ${{ matrix.modules.has_changes == true }}
         uses: golangci/golangci-lint-action@v8
         with:
           # The version of golangci-lint is required and must be specified without patch version: we always use the latest patch version.
@@ -153,4 +185,4 @@ jobs:
           # Show only new issues if it's a pull request
           only-new-issues: ${{ inputs.golangci-lint-only-new-issues }}
 
-          working-directory: ${{ matrix.module-dir }} # if there is more than one module in the workspace they will all be linted
+          working-directory: ${{ matrix.modules.dir }} # if there is more than one module in the workspace they will all be linted
