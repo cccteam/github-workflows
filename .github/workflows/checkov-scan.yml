@@ -32,7 +32,7 @@ jobs:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
       - name: Checkov GitHub Action
-        uses: bridgecrewio/checkov-action@3d6f50764327724508da94449e67225a2a24e51e # v12
+        uses: bridgecrewio/checkov-action@4f9f1bef9f759c19c966f39c0638ea427d776f4d # v12
         with:
           output_format: ${{ inputs.output_format }}
           output_file_path: ${{ inputs.output_file_path }}
