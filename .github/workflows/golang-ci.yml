@@ -16,13 +16,17 @@ on:
         required: false
         type: string
         default: "."
+      release-please-config-file:
+        required: false
+        type: string
+        default: "release-please-config.json"
       build-tags:
         required: true
         type: string # containing Json-formatted array of strings, e.g. '["", "tag1", "tag2", "tag1,tag3"]'
       golangci-lint-version:
         required: false
         type: string
-        default: "v1.56"
+        default: "v2.4"
       golangci-lint-timeout:
         required: false
         type: string
@@ -35,6 +39,10 @@ on:
         required: false
         type: string
         default: "ubuntu-latest"
+      ccclint-version:
+        required: false
+        type: string
+        default: "v0.0.3"
 
 jobs:
   detect-modules:
@@ -49,7 +57,7 @@ jobs:
       - id: set-modules
         # compares the go modules from `release-please-config.json` in each repo to the directories with git diffs
         run: |
-          all_module_dirs=$(cat release-please-config.json 2>/dev/null | jq -csS --arg workingDir ${{ inputs.working-directory }} 'if length == 0 then ["\($workingDir)"] else ( ((.[0].packages | keys?) // []) | if length == 0 then ["\($workingDir)"] else map("\($workingDir)/\(.)") end) end')
+          all_module_dirs=$(cat ${{ inputs.release-please-config-file }} 2>/dev/null | jq -csS --arg workingDir ${{ inputs.working-directory }} 'if length == 0 then ["\($workingDir)"] else ( ((.[0].packages | keys?) // []) | if length == 0 then ["\($workingDir)"] else map("\($workingDir)/\(.)") end) end')
           changed_module_dirs=$(jq -cnS --argjson packages $all_module_dirs --argjson changed_module_dirs $(git diff --name-only --line-prefix='./' refs/remotes/origin/master HEAD | awk -F "/*[^/]*/*$" '{ print ($1 == "." ? "./." : $1); }' | cut -d "/" -f1-2 | sort | uniq | jq -ncRS '[inputs]') '$packages | map(select(. as $pkg | $changed_module_dirs | index($pkg)))' | awk '{ print ($1 == "[]" ? "[\"./.\"]" : $1); }')
           has_changes=$(echo $all_module_dirs | jq -c --argjson changed_module_dirs "$changed_module_dirs" 'map(. as $dir | {key: $dir, value: ($changed_module_dirs | index($dir) != null)}) | from_entries')
           echo "module-dir=$all_module_dirs" >> $GITHUB_OUTPUT
@@ -180,12 +188,17 @@ jobs:
           go-version-file: ${{ matrix.module-dir }}/go.mod
           cache-dependency-path: ${{ matrix.module-dir }}/go.sum
 
-      - name: golangci-lint ${{ matrix.module-dir }}
+      - name: Set up custom golangci-lint using ccclint
         if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true }}
-        uses: golangci/golangci-lint-action@v8
-        with:
-          version: ${{ inputs.golangci-lint-version }}
-          args: --timeout ${{ inputs.golangci-lint-timeout }} --verbose ${{ matrix.build-tag != '' && format('--build-tags {0}', matrix.build-tag) || '' }}
-          # Show only new issues if it's a pull request
-          only-new-issues: ${{ inputs.golangci-lint-only-new-issues }}
-          working-directory: ${{ matrix.module-dir }}
+        run: |
+          go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8 # There seems to be an odd bug in v2 for now when building custom linters, using v1 for the time being
+          go install github.com/cccteam/ccc/lint/cmd/install-ccc-linter@${{ inputs.ccclint-version }}
+          install-ccc-linter -g=${{ inputs.golangci-lint-version }}
+
+      - name: Run golangci-lint
+        if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true }}
+        run: |
+          golangci-lint-v2 run --timeout ${{ inputs.golangci-lint-timeout }} --verbose \
+          ${{ matrix.build-tag != '' && format('--build-tags {0}', matrix.build-tag) || '' }} \
+          ${{ inputs.golangci-lint-only-new-issues && '-n' || '' }}
+        working-directory: ${{ matrix.module-dir }} # if there is more than one module in the workspace they will all be linted
