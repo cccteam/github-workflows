@@ -1,5 +1,9 @@
 name: Semgrep Security Scan Template
 
+permissions:
+  contents: read
+  security-events: write
+
 on:
   workflow_call:
     inputs:
