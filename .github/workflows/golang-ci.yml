@@ -175,9 +175,9 @@ jobs:
       matrix:
         module-dir: ${{ fromJson(needs.detect-modules.outputs.module-dir) }}
     steps:
-      #- name: Skip if no changes
-      #  if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == false }}
-      #  run: echo "No changes detected in ${{ matrix.module-dir }}. Skipping Semgrep scan."
+      - name: Skip if no changes
+        if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == false }}
+        run: echo "No changes detected in ${{ matrix.module-dir }}. Skipping Semgrep scan."
 
       - name: Checkout repository
         if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true }}
