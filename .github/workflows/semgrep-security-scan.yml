@@ -15,7 +15,7 @@ on:
       upload-sarif:
         required: false
         type: boolean
-        default: true
+        default: false
         description: "Upload SARIF report for GitHub Advanced Security Dashboard"
       semgrep-config:
         required: false
