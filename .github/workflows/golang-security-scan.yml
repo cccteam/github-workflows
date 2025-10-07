@@ -47,7 +47,7 @@ on:
         type: string
         default: ""
         description: >
-          Path to a json file that contains a JSON array of Dependabot alerts to ignore. 
+          Path to a json file that contains a JSON array of Dependabot alerts to ignore.
           If not provided, no alerts will be ignored.
 
           Note: These alerts should be copied directly from the Dependabot issue so that the formatting is as expected.
@@ -55,6 +55,11 @@ on:
         required: false
         type: string
         default: "ubuntu-latest"
+      upload-sarif:
+        required: false
+        type: boolean
+        default: false
+        description: "Upload SARIF report for GitHub Advanced Security Dashboard (runs as separate job)"
     secrets:
       SLACK_BOT_TOKEN:
         required: true
@@ -156,6 +161,42 @@ jobs:
           fi
         shell: bash
 
+  govulncheck-sarif:
+    name: Go Vulnerability Check (SARIF Upload)
+    runs-on: ${{ inputs.runs-on }}
+    if: inputs.upload-sarif && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    steps:
+      - name: Set up Go for govulncheck
+        uses: actions/setup-go@v5
+        with:
+          go-version: "stable"
+          cache: false
+
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@${{ inputs.govulncheck-version }}
+        shell: bash
+
+      - uses: actions/checkout@v5
+
+      - name: Set up Go for app
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ inputs.working-directory }}/go.mod
+          cache: false
+
+      - name: Run govulncheck with SARIF output
+        continue-on-error: true
+        run: |
+          govulncheck -C ${{ inputs.working-directory }} -format sarif ./... > govulncheck.sarif
+        shell: bash
+
+      - name: Upload SARIF file for GitHub Advanced Security Dashboard
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: govulncheck.sarif
+          category: govulncheck
+        if: always()
+
   trivy:
     needs: env-setup
     name: Trivy Scan
@@ -212,6 +253,43 @@ jobs:
         run: |
           cat ${{ env.REPORT_PATH }}
           exit 1
+
+  trivy-sarif:
+    name: Trivy Scan (SARIF Upload)
+    runs-on: ${{ inputs.runs-on }}
+    if: inputs.upload-sarif && inputs.execute-trivy-scan && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Prepare Docker build args
+        id: prepare-build-args
+        run: |
+          build_args='${{ inputs.docker-build-args }}'
+          build_args=$(echo $build_args | jq -r '.[] | "--build-arg " + .' | xargs)
+          echo "BUILD_ARGS=$build_args" >> $GITHUB_ENV
+
+      - name: Build docker image
+        run: |
+          repo_name=$(echo "${{ github.repository }}" | awk '{print tolower($0)}')
+          echo "REPO_NAME=$repo_name" >> $GITHUB_ENV
+          docker build $BUILD_ARGS -t $repo_name:latest .
+
+      - name: Run Trivy vulnerability scanner with SARIF output
+        uses: aquasecurity/trivy-action@0.32.0
+        with:
+          image-ref: "${{ env.REPO_NAME }}:latest"
+          format: "sarif"
+          output: trivy.sarif
+          vuln-type: "os,library"
+          severity: "LOW,MEDIUM,HIGH,CRITICAL"
+        continue-on-error: true
+
+      - name: Upload SARIF file for GitHub Advanced Security Dashboard
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy.sarif
+          category: trivy
+        if: always()
 
   dependabot:
     runs-on: ${{ inputs.runs-on }}

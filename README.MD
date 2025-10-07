@@ -18,7 +18,11 @@ This repository provides a collection of reusable GitHub Actions workflow templa
 
 - **Golang Security Scan**
   [`golang-security-scan.yml`](.github/workflows/golang-security-scan.yml):
-  Performs security scanning for Go projects using govulncheck, Trivy, and Dependabot alerts. Notifies via Slack and creates GitHub issues for failed jobs.
+  Performs security scanning for Go projects using govulncheck, Trivy, and Dependabot alerts. Notifies via Slack and creates GitHub issues for failed jobs. Optionally uploads SARIF reports to GitHub Advanced Security Dashboard for scheduled and manual runs.
+
+- **Semgrep Security Scan**
+  [`semgrep-security-scan.yml`](.github/workflows/semgrep-security-scan.yml):
+  Performs static code analysis using Semgrep to detect security vulnerabilities, code quality issues, and bugs. Optionally uploads SARIF reports to GitHub Advanced Security Dashboard.
 
 ### Docker Workflows
 
@@ -130,6 +134,36 @@ The Angular CI workflow can run any npm script defined in your `package.json`. C
 - `typecheck` - TypeScript type checking
 - `bundle-analyzer` - Bundle size analysis
 - `docs` - Generate documentation
+
+### Security Scanning with SARIF Upload
+
+```yaml
+name: Security Scan
+on:
+  schedule:
+    - cron: '0 2 * * *'  # Daily at 2 AM UTC
+  workflow_dispatch:
+
+jobs:
+  golang-security-scan:
+    uses: cccteam/github-workflows/.github/workflows/golang-security-scan.yml@v5.9.0
+    with:
+      upload-sarif: true  # Upload results to GitHub Security Dashboard
+      execute-trivy-scan: true
+      execute-dependabot-check: true
+    secrets:
+      SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+      SLACK_CHANNEL_ID: ${{ secrets.SLACK_CHANNEL_ID }}
+      DEPENDABOT_ALERTS_TOKEN: ${{ secrets.DEPENDABOT_ALERTS_TOKEN }}
+
+  semgrep-scan:
+    uses: cccteam/github-workflows/.github/workflows/semgrep-security-scan.yml@v5.9.0
+    with:
+      upload-sarif: true  # Upload results to GitHub Security Dashboard
+      semgrep-config: auto  # Use auto-detection or specify custom rules (e.g., p/security-audit, p/owasp-top-ten)
+```
+
+**Note:** For the Golang Security Scan, SARIF uploads only occur when the workflow is triggered by `schedule` or `workflow_dispatch` events, not on pull requests. This ensures scheduled security scans populate the GitHub Security Dashboard while PR checks remain fast and focused.
 
 ### Advanced Example with Multiple Workflows
 
