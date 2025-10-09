@@ -189,6 +189,12 @@ jobs:
           cd ${{ matrix.module-dir }}
           semgrep scan --config auto --sarif > semgrep.sarif
 
+      - name: Echo SARIF Results
+        if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true && !inputs.upload-sarif }}
+        run: |
+          echo "Semgrep SARIF Results:"
+          cat ${{ matrix.module-dir }}/semgrep.sarif
+
       - name: Upload SARIF file for GitHub Advanced Security Dashboard
         if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true && inputs.upload-sarif }}
         uses: github/codeql-action/upload-sarif@v3
