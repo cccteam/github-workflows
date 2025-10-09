@@ -184,16 +184,16 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Perform Semgrep Analysis and Generate SARIF
-        if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true }}
+        if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true && inputs.upload-sarif }}
         run: |
           cd ${{ matrix.module-dir }}
           semgrep scan --config auto --sarif > semgrep.sarif
 
-      - name: Echo SARIF Results
+      - name: Perform Semgrep Analysis with CLI Output
         if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true && !inputs.upload-sarif }}
         run: |
-          echo "Semgrep SARIF Results:"
-          cat ${{ matrix.module-dir }}/semgrep.sarif
+          cd ${{ matrix.module-dir }}
+          semgrep scan --config auto
 
       - name: Upload SARIF file for GitHub Advanced Security Dashboard
         if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true && inputs.upload-sarif }}

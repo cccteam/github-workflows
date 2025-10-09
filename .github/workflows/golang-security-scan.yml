@@ -187,13 +187,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v5
       - name: Perform Semgrep Analysis and Generate SARIF
+        if: inputs.upload-sarif
         run: |
           semgrep scan --config ${{ inputs.semgrep-config }} --sarif > semgrep.sarif
-      - name: Echo SARIF Results
+      - name: Perform Semgrep Analysis with CLI Output
         if: ${{ !inputs.upload-sarif }}
         run: |
-          echo "Semgrep SARIF Results:"
-          cat semgrep.sarif
+          semgrep scan --config ${{ inputs.semgrep-config }}
       - name: Upload SARIF file for GitHub Advanced Security Dashboard
         if: inputs.upload-sarif
         uses: github/codeql-action/upload-sarif@v3
