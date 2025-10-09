@@ -144,18 +144,18 @@ jobs:
   security-scan:
     uses: cccteam/github-workflows/.github/workflows/golang-security-scan.yml@v5.9.0
     with:
-      upload-sarif: true  # Upload results to GitHub Security Dashboard
+      upload-sarif: true
       execute-trivy-scan: true
       execute-dependabot-check: true
-      execute-semgrep-scan: true  # Enable Semgrep static analysis
-      semgrep-config: auto  # Use auto-detection or specify custom rules (e.g., p/security-audit, p/owasp-top-ten)
+      execute-semgrep-scan: true
+      semgrep-config: auto
     secrets:
       SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
       SLACK_CHANNEL_ID: ${{ secrets.SLACK_CHANNEL_ID }}
       DEPENDABOT_ALERTS_TOKEN: ${{ secrets.DEPENDABOT_ALERTS_TOKEN }}
 ```
 
-**Note:** SARIF uploads for govulncheck and Trivy only occur when the workflow is triggered by `schedule` or `workflow_dispatch` events, not on pull requests. Semgrep SARIF uploads can occur on any trigger when `upload-sarif: true`. This ensures scheduled security scans populate the GitHub Security Dashboard while PR checks remain fast and focused.
+**Note:** SARIF uploads occur whenever `upload-sarif: true` is set.
 
 ### Advanced Example with Multiple Workflows
 
