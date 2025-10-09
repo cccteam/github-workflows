@@ -15,18 +15,18 @@ on:
       working-directory:
         required: false
         type: string
-        default: "."
+        default: '.'
       build-tags:
         required: true
         type: string # containing Json-formatted array of strings, e.g. '["", "tag1", "tag2", "tag1,tag3"]'
       golangci-lint-version:
         required: false
         type: string
-        default: "v1.56"
+        default: 'v1.56'
       golangci-lint-timeout:
         required: false
         type: string
-        default: "5m"
+        default: '5m'
       golangci-lint-only-new-issues:
         required: false
         type: boolean
@@ -39,15 +39,16 @@ on:
       runs-on:
         required: false
         type: string
-        default: "ubuntu-latest"
+        default: 'ubuntu-latest'
 
 jobs:
   detect-modules:
     runs-on: ${{ inputs.runs-on }}
     outputs:
       module-dir: ${{ steps.set-modules.outputs.module-dir }}
+      has-changes: ${{ steps.set-modules.outputs.has-changes }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
       - id: set-modules
@@ -107,6 +108,7 @@ jobs:
     needs: detect-modules
     runs-on: ${{ inputs.runs-on }}
     strategy:
+      fail-fast: false
       matrix:
         build-tag: ${{ fromJson(inputs.build-tags) }}
         module-dir: ${{ fromJson(needs.detect-modules.outputs.module-dir) }}
@@ -199,28 +201,32 @@ jobs:
     needs: detect-modules
     runs-on: ${{ inputs.runs-on }}
     strategy:
+      fail-fast: false
       matrix:
         build-tag: ${{ fromJson(inputs.build-tags) }}
         module-dir: ${{ fromJson(needs.detect-modules.outputs.module-dir) }}
     steps:
+      - name: Skip if no changes
+        if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == false }}
+        run: echo "No changes detected in ${{ matrix.module-dir }}. Skipping linter."
+
       - name: Check out code into the Go module directory
-        uses: actions/checkout@v4
+        if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true }}
+        uses: actions/checkout@v5
 
       - name: Set up Go for app
+        if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true }}
         uses: actions/setup-go@v5
         with:
           go-version-file: ${{ matrix.module-dir }}/go.mod
           cache-dependency-path: ${{ matrix.module-dir }}/go.sum
 
       - name: golangci-lint ${{ matrix.module-dir }}
-        uses: golangci/golangci-lint-action@v6
+        if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true }}
+        uses: golangci/golangci-lint-action@v8
         with:
-          # The version of golangci-lint is required and must be specified without patch version: we always use the latest patch version.
           version: ${{ inputs.golangci-lint-version }}
-
           args: --timeout ${{ inputs.golangci-lint-timeout }} --verbose ${{ matrix.build-tag != '' && format('--build-tags {0}', matrix.build-tag) || '' }}
-
           # Show only new issues if it's a pull request
           only-new-issues: ${{ inputs.golangci-lint-only-new-issues }}
-
-          working-directory: ${{ matrix.module-dir }} # if there is more than one module in the workspace they will all be linted
+          working-directory: ${{ matrix.module-dir }}
