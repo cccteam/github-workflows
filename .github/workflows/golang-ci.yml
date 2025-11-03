@@ -35,6 +35,10 @@ on:
         required: false
         type: string
         default: "ubuntu-latest"
+      primary-branch:
+        required: false
+        type: string
+        default: "master"
 
 jobs:
   detect-modules:
@@ -50,7 +54,7 @@ jobs:
         # compares the go modules from `release-please-config.json` in each repo to the directories with git diffs
         run: |
           all_module_dirs=$(cat release-please-config.json 2>/dev/null | jq -csS --arg workingDir ${{ inputs.working-directory }} 'if length == 0 then ["\($workingDir)"] else ( ((.[0].packages | keys?) // []) | if length == 0 then ["\($workingDir)"] else map("\($workingDir)/\(.)") end) end')
-          changed_module_dirs=$(jq -cnS --argjson packages $all_module_dirs --argjson changed_module_dirs $(git diff --name-only --line-prefix='./' refs/remotes/origin/master HEAD | awk -F "/*[^/]*/*$" '{ print ($1 == "." ? "./." : $1); }' | cut -d "/" -f1-2 | sort | uniq | jq -ncRS '[inputs]') '$packages | map(select(. as $pkg | $changed_module_dirs | index($pkg)))' | awk '{ print ($1 == "[]" ? "[\"./.\"]" : $1); }')
+          changed_module_dirs=$(jq -cnS --argjson packages $all_module_dirs --argjson changed_module_dirs $(git diff --name-only --line-prefix='./' refs/remotes/origin/${{ inputs.primary-branch }} HEAD | awk -F "/*[^/]*/*$" '{ print ($1 == "." ? "./." : $1); }' | cut -d "/" -f1-2 | sort | uniq | jq -ncRS '[inputs]') '$packages | map(select(. as $pkg | $changed_module_dirs | index($pkg)))' | awk '{ print ($1 == "[]" ? "[\"./.\"]" : $1); }')
           has_changes=$(echo $all_module_dirs | jq -c --argjson changed_module_dirs "$changed_module_dirs" 'map(. as $dir | {key: $dir, value: ($changed_module_dirs | index($dir) != null)}) | from_entries')
           echo "module-dir=$all_module_dirs" >> $GITHUB_OUTPUT
           echo "has-changes=$has_changes" >> $GITHUB_OUTPUT
