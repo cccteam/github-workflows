@@ -130,7 +130,7 @@ jobs:
 
       - name: Run build
         if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true }}
-        run: go build ${{ matrix.build-tag != '' && format('-tags {0}', matrix.build-tag) || '' }}
+        run: go build ${{ matrix.build-tag != '' && format('-tags {0}', matrix.build-tag) || '' }} ./...
         working-directory: ${{ matrix.module-dir }}
 
   govulncheck:
