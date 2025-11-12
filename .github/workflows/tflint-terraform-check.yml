@@ -17,7 +17,7 @@ jobs:
           fetch-depth: 0 # Fetch full history for git diff
 
       - name: Set up TFLint
-        uses: terraform-linters/setup-tflint@ae78205cfffec9e8d93fd2b3115c7e9d3166d4b6 # v5.0.0
+        uses: terraform-linters/setup-tflint@4cb9feea73331a35b422df102992a03a44a3bb33 # v6.2.1
         with:
           tflint_version: latest
 
