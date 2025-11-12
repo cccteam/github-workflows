@@ -75,7 +75,7 @@ jobs:
 
       - name: Set up Go for app
         if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true }}
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: ${{ matrix.module-dir }}/go.mod
           cache-dependency-path: ${{ matrix.module-dir }}/go.sum
@@ -118,7 +118,7 @@ jobs:
 
       - name: Set up Go for app
         if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true }}
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: ${{ matrix.module-dir }}/go.mod
           cache-dependency-path: ${{ matrix.module-dir }}/go.sum
@@ -175,14 +175,14 @@ jobs:
 
       - name: Set up Go for app
         if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true }}
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: ${{ matrix.module-dir }}/go.mod
           cache-dependency-path: ${{ matrix.module-dir }}/go.sum
 
       - name: golangci-lint ${{ matrix.module-dir }}
         if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true }}
-        uses: golangci/golangci-lint-action@v8
+        uses: golangci/golangci-lint-action@v9
         with:
           version: ${{ inputs.golangci-lint-version }}
           args: --timeout ${{ inputs.golangci-lint-timeout }} --verbose ${{ matrix.build-tag != '' && format('--build-tags {0}', matrix.build-tag) || '' }}
