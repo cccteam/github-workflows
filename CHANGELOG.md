@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.13.0](https://github.com/cccteam/github-workflows/compare/v5.12.4...v5.13.0) (2025-11-12)
+
+
+### Features
+
+* Build all go packages in the working dir and below ([#100](https://github.com/cccteam/github-workflows/issues/100)) ([86239fd](https://github.com/cccteam/github-workflows/commit/86239fdf53d7bba3f765dc127f97c61de702439f))
+
 ## [5.12.4](https://github.com/cccteam/github-workflows/compare/v5.12.3...v5.12.4) (2025-09-04)
 
 
