@@ -41,7 +41,7 @@ jobs:
         with:
           output_format: ${{ inputs.output_format }}
           output_file_path: ${{ inputs.output_file_path }}
-          framework: "terraform" # Scan terraform files
+          framework: "terraform"
           quiet: true
           skip_check: ${{ inputs.skip_check }}
 
