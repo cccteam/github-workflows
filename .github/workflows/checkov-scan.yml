@@ -18,6 +18,11 @@ on:
         required: false
         type: boolean
         default: false
+      skip_check:
+        description: "Comma-separated list of checks to skip (e.g., CKV_TF_1,CKV_GCP_18)"
+        required: false
+        type: string
+        default: ""
 
 jobs:
   scan:
@@ -38,6 +43,7 @@ jobs:
           output_file_path: ${{ inputs.output_file_path }}
           framework: "terraform" # Scan terraform files
           quiet: true
+          skip_check: ${{ inputs.skip_check }}
 
       - name: Upload SARIF file
         if: ${{ inputs.upload_sarif == true && (success() || failure()) }}
