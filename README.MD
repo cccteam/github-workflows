@@ -18,7 +18,7 @@ This repository provides a collection of reusable GitHub Actions workflow templa
 
 - **Golang Security Scan**
   [`golang-security-scan.yml`](.github/workflows/golang-security-scan.yml):
-  Performs security scanning for Go projects using govulncheck, Trivy, and Dependabot alerts. Notifies via Slack and creates GitHub issues for failed jobs.
+  Performs comprehensive security scanning for Go projects using govulncheck, Trivy, Semgrep, and Dependabot alerts. Notifies via Slack and creates GitHub issues for failed jobs. Optionally uploads SARIF reports to GitHub Advanced Security Dashboard for scheduled and manual runs.
 
 ### Docker Workflows
 
@@ -130,6 +130,32 @@ The Angular CI workflow can run any npm script defined in your `package.json`. C
 - `typecheck` - TypeScript type checking
 - `bundle-analyzer` - Bundle size analysis
 - `docs` - Generate documentation
+
+### Security Scanning with SARIF Upload
+
+```yaml
+name: Security Scan
+on:
+  schedule:
+    - cron: '0 2 * * *'  # Daily at 2 AM UTC
+  workflow_dispatch:
+
+jobs:
+  security-scan:
+    uses: cccteam/github-workflows/.github/workflows/golang-security-scan.yml@v5.9.0
+    with:
+      upload-sarif: true
+      execute-trivy-scan: true
+      execute-dependabot-check: true
+      execute-semgrep-scan: true
+      semgrep-config: auto
+    secrets:
+      SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+      SLACK_CHANNEL_ID: ${{ secrets.SLACK_CHANNEL_ID }}
+      DEPENDABOT_ALERTS_TOKEN: ${{ secrets.DEPENDABOT_ALERTS_TOKEN }}
+```
+
+**Note:** SARIF uploads occur whenever `upload-sarif: true` is set.
 
 ### Advanced Example with Multiple Workflows
 

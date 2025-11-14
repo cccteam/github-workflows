@@ -15,26 +15,31 @@ on:
       working-directory:
         required: false
         type: string
-        default: "."
+        default: '.'
       build-tags:
         required: true
         type: string # containing Json-formatted array of strings, e.g. '["", "tag1", "tag2", "tag1,tag3"]'
       golangci-lint-version:
         required: false
         type: string
-        default: "v1.56"
+        default: 'v1.56'
       golangci-lint-timeout:
         required: false
         type: string
-        default: "5m"
+        default: '5m'
       golangci-lint-only-new-issues:
         required: false
         type: boolean
         default: false
+      upload-sarif:
+        required: false
+        type: boolean
+        default: false
+        description: 'Upload SARIF report for GitHub Advanced Security Dashboard'
       runs-on:
         required: false
         type: string
-        default: "ubuntu-latest"
+        default: 'ubuntu-latest'
 
 jobs:
   detect-modules:
@@ -154,6 +159,48 @@ jobs:
           go-version-file: ${{ matrix.module-dir }}/go.mod
           go-package: ./...
           work-dir: ${{ matrix.module-dir }}
+
+  semgrep-scan:
+    name: Run Semgrep Scan
+    needs: detect-modules
+    runs-on: ${{ inputs.runs-on }}
+    permissions:
+      security-events: write
+      contents: read
+      actions: read
+    container:
+      image: semgrep/semgrep
+    strategy:
+      fail-fast: false
+      matrix:
+        module-dir: ${{ fromJson(needs.detect-modules.outputs.module-dir) }}
+    steps:
+      - name: Skip if no changes
+        if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == false }}
+        run: echo "No changes detected in ${{ matrix.module-dir }}. Skipping Semgrep scan."
+
+      - name: Checkout repository
+        if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true }}
+        uses: actions/checkout@v5
+
+      - name: Perform Semgrep Analysis and Generate SARIF
+        if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true && inputs.upload-sarif }}
+        run: |
+          cd ${{ matrix.module-dir }}
+          semgrep scan --config auto --sarif > semgrep.sarif
+
+      - name: Perform Semgrep Analysis with CLI Output
+        if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true && !inputs.upload-sarif }}
+        run: |
+          cd ${{ matrix.module-dir }}
+          semgrep scan --config auto
+
+      - name: Upload SARIF file for GitHub Advanced Security Dashboard
+        if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true && inputs.upload-sarif }}
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: ${{ matrix.module-dir }}/semgrep.sarif
+          category: semgrep-${{ matrix.module-dir }}
 
   linter:
     name: Run golangci-lint

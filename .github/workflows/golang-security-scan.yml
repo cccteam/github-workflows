@@ -17,7 +17,7 @@ on:
       govulncheck-version:
         required: false
         type: string
-        default: "latest"
+        default: 'latest'
         description: Version of govulncheck to use
       execute-trivy-scan:
         required: false
@@ -27,7 +27,11 @@ on:
         required: false
         type: boolean
         default: true
-        description: "Execute the Dependabot security alerts check"
+        description: 'Execute the Dependabot security alerts check'
+      execute-semgrep-scan:
+        required: false
+        type: boolean
+        default: false
       working-directory:
         required: false
         type: string
@@ -35,26 +39,38 @@ on:
       docker-build-args:
         required: false
         type: string
-        default: "[]" # empty array
+        default: '[]' # empty array
         description: Json-formatted array of strings to pass to the docker build command as build args. e.g. '["arg1", "arg2"]'
       scan-latest-release:
         required: false
-        description: "Scan the latest release of the repository in addition to the default branch"
+        description: 'Scan the latest release of the repository in addition to the default branch'
         default: true
         type: boolean
       ignored-dependabot-alerts-path:
         required: false
         type: string
-        default: ""
+        default: ''
         description: >
-          Path to a json file that contains a JSON array of Dependabot alerts to ignore. 
+          Path to a json file that contains a JSON array of Dependabot alerts to ignore.
           If not provided, no alerts will be ignored.
 
           Note: These alerts should be copied directly from the Dependabot issue so that the formatting is as expected.
+      upload-sarif:
+        required: false
+        type: boolean
+        default: false
+        description: 'Upload SARIF report for GitHub Advanced Security Dashboard'
+      semgrep-config:
+        required: false
+        type: string
+        default: 'auto'
+        description: 'Semgrep configuration to use (auto, p/security-audit, p/owasp-top-ten, etc.)'
+
       runs-on:
         required: false
         type: string
-        default: "ubuntu-latest"
+        default: 'ubuntu-latest'
+
     secrets:
       SLACK_BOT_TOKEN:
         required: true
@@ -71,7 +87,7 @@ jobs:
     name: Environment Setup
     runs-on: ${{ inputs.runs-on }}
     outputs:
-      checkout-refs: "[${{ steps.set_checkout_refs.outputs.checkout_refs }}]"
+      checkout-refs: '[${{ steps.set_checkout_refs.outputs.checkout_refs }}]'
     steps:
       - name: Get latest release
         if: ${{ inputs.scan-latest-release }}
@@ -111,7 +127,7 @@ jobs:
       - name: Set up Go for govulncheck
         uses: actions/setup-go@v6
         with:
-          go-version: "stable"
+          go-version: 'stable'
           cache: false
 
       - name: Install govulncheck
@@ -156,6 +172,35 @@ jobs:
           fi
         shell: bash
 
+  semgrep_scan:
+    needs: env-setup
+    name: Semgrep Scan
+    runs-on: ${{ inputs.runs-on }}
+    if: ${{ inputs.execute-semgrep-scan }}
+    permissions:
+      security-events: write
+      contents: read
+      actions: read
+    container:
+      image: semgrep/semgrep
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+      - name: Perform Semgrep Analysis and Generate SARIF
+        if: inputs.upload-sarif
+        run: |
+          semgrep scan --config ${{ inputs.semgrep-config }} --sarif > semgrep.sarif
+      - name: Perform Semgrep Analysis with CLI Output
+        if: ${{ !inputs.upload-sarif }}
+        run: |
+          semgrep scan --config ${{ inputs.semgrep-config }}
+      - name: Upload SARIF file for GitHub Advanced Security Dashboard
+        if: inputs.upload-sarif
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep
+
   trivy:
     needs: env-setup
     name: Trivy Scan
@@ -193,12 +238,12 @@ jobs:
         id: trivy_scan
         uses: aquasecurity/trivy-action@0.33.1
         with:
-          image-ref: "${{ env.REPO_NAME }}:latest"
-          format: "table"
+          image-ref: '${{ env.REPO_NAME }}:latest'
+          format: 'table'
           output: ${{ env.REPORT_PATH }}
-          vuln-type: "os,library"
-          severity: "LOW,MEDIUM,HIGH,CRITICAL"
-          exit-code: "1"
+          vuln-type: 'os,library'
+          severity: 'LOW,MEDIUM,HIGH,CRITICAL'
+          exit-code: '1'
         continue-on-error: true
 
       - name: Save Trivy report as artifact
