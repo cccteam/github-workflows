@@ -92,7 +92,7 @@ jobs:
       - name: Get latest release
         if: ${{ inputs.scan-latest-release }}
         id: get_latest_release
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const latestRelease = await github.rest.repos.getLatestRelease({
@@ -125,7 +125,7 @@ jobs:
           echo "REPORT_PATH=govulncheck-report-${{ matrix.checkout-ref == '' && '1' || '2' }}.txt" >> $GITHUB_ENV
 
       - name: Set up Go for govulncheck
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: 'stable'
           cache: false
@@ -140,7 +140,7 @@ jobs:
           fetch-tags: true
 
       - name: Set up Go for app
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: ${{ inputs.working-directory }}/go.mod
           cache: false
@@ -157,7 +157,7 @@ jobs:
         shell: bash
 
       - name: Save govulncheck report as artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: ${{ env.REPORT_NAME }}
           path: ${{ env.REPORT_PATH }}
@@ -236,7 +236,7 @@ jobs:
 
       - name: Run Trivy vulnerability scanner (capture findings)
         id: trivy_scan
-        uses: aquasecurity/trivy-action@0.32.0
+        uses: aquasecurity/trivy-action@0.33.1
         with:
           image-ref: '${{ env.REPO_NAME }}:latest'
           format: 'table'
@@ -247,7 +247,7 @@ jobs:
         continue-on-error: true
 
       - name: Save Trivy report as artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: ${{ env.REPORT_NAME }}
           path: ${{ env.REPORT_PATH }}
@@ -306,7 +306,7 @@ jobs:
           fi
 
       - name: Upload Dependabot alerts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: dependabot-1
           path: dependabot-report-1.txt
@@ -352,12 +352,12 @@ jobs:
             echo "should_run=false" >> $GITHUB_OUTPUT
           fi
 
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v6
         if: steps.setup.outputs.should_run == 'true'
         with:
           name: ${{ matrix.label }}-1
 
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v6
         if: steps.setup.outputs.should_run == 'true' && inputs.scan-latest-release && matrix.label != 'dependabot'
         with:
           name: ${{ matrix.label }}-2
@@ -376,7 +376,7 @@ jobs:
       - name: Search for existing issue
         if: steps.setup.outputs.should_run == 'true'
         id: search_issue
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           github-token: ${{secrets.GITHUB_TOKEN}}
           script: |
@@ -412,7 +412,7 @@ jobs:
       - name: Update or Create Issue
         if: steps.setup.outputs.should_run == 'true'
         id: create_issue
-        uses: peter-evans/create-issue-from-file@v5
+        uses: peter-evans/create-issue-from-file@v6
         with:
           title: ${{ steps.search_issue.outputs.issue_title }}
           content-filepath: ./formatted-results.md
@@ -422,7 +422,7 @@ jobs:
       - name: Get issue URL
         if: steps.setup.outputs.should_run == 'true'
         id: get_issue_url
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           github-token: ${{secrets.GITHUB_TOKEN}}
           script: |
@@ -441,7 +441,7 @@ jobs:
 
       - name: Upload issue artifact
         if: steps.setup.outputs.should_run == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: ${{ matrix.label }}-issue
           path: ${{ matrix.label }}-issue.txt
@@ -454,21 +454,21 @@ jobs:
     steps:
       - name: Download govulncheck issue artifact
         if: needs.govulncheck.result == 'failure'
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v6
         with:
           name: govulncheck-issue
         continue-on-error: true # Continue if the artifact is not found
 
       - name: Download trivy issue artifact
         if: inputs.execute-trivy-scan && needs.trivy.result == 'failure'
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v6
         with:
           name: trivy-issue
         continue-on-error: true # Continue if the artifact is not found
 
       - name: Download dependabot issue artifact
         if: inputs.execute-dependabot-check && needs.dependabot.result == 'failure'
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v6
         with:
           name: dependabot-issue
         continue-on-error: true # Continue if the artifact is not found

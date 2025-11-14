@@ -42,7 +42,7 @@ This repository provides a collection of reusable GitHub Actions workflow templa
 
 - **Checkov Terraform Scan**
   [`checkov-scan.yml`](.github/workflows/checkov-scan.yml):
-  Scans Terraform code for security and compliance issues using Checkov.
+  Scans Terraform code for security and compliance issues using Checkov. Supports skipping specific checks via the `skip_check` input (comma-separated list of check IDs).
 
 - **TFLint Terraform Check**
   [`tflint-terraform-check.yml`](.github/workflows/tflint-terraform-check.yml):
@@ -174,6 +174,15 @@ jobs:
     uses: cccteam/github-workflows/.github/workflows/trivy-terraform-scan.yml@v5.9.0
     with:
       working-directory: 'terraform'
+
+  checkov-scan:
+    uses: cccteam/github-workflows/.github/workflows/checkov-scan.yml@v5.9.0
+    with:
+      skip_check: "CKV_TF_1,CKV_GCP_18"  # Optional: skip specific checks
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
 ```
 
 Refer to each workflow file for available inputs, secrets, and configuration options. When referencing workflows, it's recommended to use a specific version tag (e.g., `@v5.9.0`) rather than `@master` to ensure workflow stability.

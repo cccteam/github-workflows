@@ -18,6 +18,11 @@ on:
         required: false
         type: boolean
         default: false
+      skip_check:
+        description: "Comma-separated list of checks to skip (e.g., CKV_TF_1,CKV_GCP_18)"
+        required: false
+        type: string
+        default: ""
 
 jobs:
   scan:
@@ -29,18 +34,19 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/checkout@v5
 
       - name: Checkov GitHub Action
-        uses: bridgecrewio/checkov-action@3d6f50764327724508da94449e67225a2a24e51e # v12
+        uses: bridgecrewio/checkov-action@v12
         with:
           output_format: ${{ inputs.output_format }}
           output_file_path: ${{ inputs.output_file_path }}
-          framework: "terraform" # Scan terraform files
+          framework: "terraform"
           quiet: true
+          skip_check: ${{ inputs.skip_check }}
 
       - name: Upload SARIF file
         if: ${{ inputs.upload_sarif == true && (success() || failure()) }}
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: results.sarif
