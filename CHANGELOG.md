@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.13.1](https://github.com/cccteam/github-workflows/compare/v5.13.0...v5.13.1) (2025-11-14)
+
+
+### Bug Fixes
+
+* checkov ignores ([#103](https://github.com/cccteam/github-workflows/issues/103)) ([ab5f235](https://github.com/cccteam/github-workflows/commit/ab5f235214ce50fd2807c9fb826e389be4f183a9))
+
 ## [5.13.0](https://github.com/cccteam/github-workflows/compare/v5.12.4...v5.13.0) (2025-11-12)
 
 
