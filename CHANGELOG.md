@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.14.0](https://github.com/cccteam/github-workflows/compare/v5.13.1...v5.14.0) (2025-11-14)
+
+
+### Features
+
+* **security:** add Semgrep security scan workflow with SARIF upload ([#97](https://github.com/cccteam/github-workflows/issues/97)) ([36daefa](https://github.com/cccteam/github-workflows/commit/36daefae3b68c6aa0f611db6193dfd498fabf86f))
+
 ## [5.13.1](https://github.com/cccteam/github-workflows/compare/v5.13.0...v5.13.1) (2025-11-14)
 
 
