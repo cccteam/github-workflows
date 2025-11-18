@@ -45,7 +45,11 @@ jobs:
         if: steps.changed-files.outputs.has_tf_files == 'true'
         run: |
           while IFS= read -r file; do
-            dir=$(dirname "$file")
-            echo "Running TFLint in directory: $dir"
-            tflint --chdir="$dir" --minimum-failure-severity=error
+            if [ -f "$file" ]; then
+              dir=$(dirname "$file")
+              echo "Running TFLint in directory: $dir"
+              tflint --chdir="$dir" --minimum-failure-severity=error
+            else
+              echo "Skipping deleted file: $file"
+            fi
           done < changed_tf_files.txt
