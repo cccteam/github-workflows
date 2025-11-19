@@ -38,47 +38,47 @@ on:
         type: boolean
         default: true
       terraform_version:
-        description: "Terraform version to use"
+        description: 'Terraform version to use'
         required: false
         type: string
-        default: "1.13.1"
+        default: '1.13.1'
       output_format:
-        description: "Output format for Checkov results (e.g., cli or cli,sarif)"
+        description: 'Output format for Checkov results (e.g., cli or cli,sarif)'
         required: false
         type: string
-        default: "cli"
+        default: 'cli'
       output_file_path:
-        description: "Output file path for Checkov results (e.g., console or console,results.sarif)"
+        description: 'Output file path for Checkov results (e.g., console or console,results.sarif)'
         required: false
         type: string
-        default: "console"
+        default: 'console'
       upload_sarif:
-        description: "Enable or disable SARIF file upload (true/false)"
+        description: 'Enable or disable SARIF file upload (true/false)'
         required: false
         type: boolean
         default: false
       skip_check:
-        description: "Comma-separated list of checks to skip (e.g., CKV_TF_1,CKV_GCP_18)"
+        description: 'Comma-separated list of checks to skip (e.g., CKV_TF_1,CKV_GCP_18)'
         required: false
         type: string
-        default: ""
+        default: ''
       scan_dir:
-        description: "Directory containing Terraform files to check for changes (scanned recursively)"
+        description: 'Directory containing Terraform files to check for changes (scanned recursively)'
         required: false
         type: string
-        default: "."
+        default: '.'
       severity:
-        description: "Severity levels to scan (e.g., CRITICAL,HIGH)"
+        description: 'Severity levels to scan (e.g., CRITICAL,HIGH)'
         required: false
         type: string
-        default: "CRITICAL,HIGH"
+        default: 'CRITICAL,HIGH'
       exclude_downloaded_modules:
-        description: "Skip scanning downloaded Terraform modules in .terraform directory"
+        description: 'Skip scanning downloaded Terraform modules in .terraform directory'
         required: false
         type: boolean
         default: true
       exit_code:
-        description: "Exit code for Trivy scan failure (0 to continue, 1 to fail). Valid values: 0, 1"
+        description: 'Exit code for Trivy scan failure (0 to continue, 1 to fail). Valid values: 0, 1'
         required: false
         type: number
         default: 1
@@ -300,7 +300,7 @@ jobs:
             echo "dirs=" >> $GITHUB_OUTPUT
           else
             # Get unique directories of changed files
-            CHANGED_DIRS=$(echo "$CHANGED_FILES" | xargs -n 1 dirname | sort -u | tr '\n' ' ' | sed 's/ $//')
+            CHANGED_DIRS=$(echo "$CHANGED_FILES" | xargs -n 1 dirname | sort -u | tr '\n' ',' | sed 's/,$//')
             echo "Changed Terraform directories: $CHANGED_DIRS"
             echo "changed=true" >> $GITHUB_OUTPUT
             echo "dirs=$CHANGED_DIRS" >> $GITHUB_OUTPUT
@@ -310,10 +310,10 @@ jobs:
         if: steps.changed-files.outputs.changed == 'true'
         uses: aquasecurity/trivy-action@v0.33.1
         with:
-          scan-type: "config"
+          scan-type: 'config'
           scan-ref: ${{ steps.changed-files.outputs.dirs }}
-          format: "table"
-          scanners: "vuln,secret,misconfig"
+          format: 'table'
+          scanners: 'vuln,secret,misconfig'
           severity: ${{ inputs.severity }}
           exit-code: ${{ inputs.exit_code }}
           skip-dirs: ${{ inputs.exclude_downloaded_modules && '.terraform' || '' }}
