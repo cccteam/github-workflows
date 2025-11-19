@@ -42,11 +42,6 @@ on:
         required: false
         type: string
         default: "1.13.1"
-      format_mode:
-        description: "Mode for Terraform formatting: 'check' to fail if not formatted, 'format' to auto-format"
-        required: false
-        type: string
-        default: "format"
       output_format:
         description: "Output format for Checkov results (e.g., cli or cli,sarif)"
         required: false
@@ -134,7 +129,7 @@ jobs:
             echo "dirs=$CHANGED_DIRS" >> $GITHUB_OUTPUT
           fi
 
-      - name: Check or Format Terraform files
+      - name: Format Terraform files
         if: steps.changed-files.outputs.changed == 'true'
         run: |
           #!/bin/bash
@@ -149,33 +144,22 @@ jobs:
             exit 0
           fi
           IFS=',' read -ra DIR_ARRAY <<< "$DIRS"
-          if [ "${{ inputs.format_mode }}" == "check" ]; then
-            FORMATTING_ISSUES=false
-            for DIR in "${DIR_ARRAY[@]}"; do
-              if [ -d "$DIR" ]; then
-                echo "Checking Terraform formatting in $DIR..."
-                if ! terraform fmt -check -diff -recursive "$DIR"; then
-                  FORMATTING_ISSUES=true
-                fi
-              else
-                echo "Warning: Directory $DIR does not exist, skipping."
-              fi
-            done
-            if $FORMATTING_ISSUES; then
-              echo "Error: Terraform files are not formatted correctly."
-              echo "Run 'terraform fmt -recursive' in the affected directories to fix formatting issues."
-              exit 1
+          for DIR in "${DIR_ARRAY[@]}"; do
+            if [ -d "$DIR" ]; then
+              echo "Formatting Terraform files in $DIR..."
+              terraform fmt -recursive "$DIR"
             fi
-            echo "All changed Terraform files are formatted correctly."
-          else
-            for DIR in "${DIR_ARRAY[@]}"; do
-              if [ -d "$DIR" ]; then
-                echo "Formatting Terraform files in $DIR..."
-                terraform fmt -recursive "$DIR"
-              fi
-            done
-            echo "Terraform files formatted."
-          fi
+          done
+          echo "Terraform files formatted."
+
+      - name: Commit and push formatted files
+        if: steps.changed-files.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          git commit -m "Auto-format Terraform files" || echo "No changes to commit"
+          git push
 
       - name: Render Terraform docs and push changes
         if: steps.changed-files.outputs.changed == 'true'

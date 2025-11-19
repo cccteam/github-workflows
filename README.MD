@@ -28,6 +28,10 @@ This repository provides a collection of reusable GitHub Actions workflow templa
 
 ### Terraform Workflows
 
+- **Terraform CI**
+  [`terraform-ci.yml`](.github/workflows/terraform-ci.yml):
+  Comprehensive Terraform CI workflow that auto-formats files (and pushes changes back to the PR), generates documentation, runs linting, and performs security scanning. Includes TFLint, Checkov, and Trivy scans optimized for changed files only.
+
 - **Terraform Format Check**
   [`terraform-fmt.yml`](.github/workflows/terraform-fmt.yml):
   Checks formatting of Terraform files in changed directories.
@@ -157,7 +161,30 @@ jobs:
 
 **Note:** SARIF uploads occur whenever `upload-sarif: true` is set.
 
+### Terraform CI Example
+
+```yaml
+name: Terraform CI
+on:
+  pull_request:
+    paths:
+      - 'terraform/**'
+
+jobs:
+  terraform-ci:
+    uses: cccteam/github-workflows/.github/workflows/terraform-ci.yml@v5.9.0
+    with:
+      working_dirs: 'terraform'
+      terraform_version: '1.6.0'
+      upload_sarif: true     # Upload security results to GitHub Security
+    secrets:
+      app_id: ${{ secrets.TERRAFORM_APP_ID }}
+      app_pem: ${{ secrets.TERRAFORM_APP_PEM }}
+```
+
 ### Advanced Example with Multiple Workflows
+
+For repositories that need more granular control, individual Terraform workflows can be used:
 
 ```yaml
 name: Infrastructure CI/CD
@@ -184,6 +211,8 @@ jobs:
       actions: read
       security-events: write
 ```
+
+**Note:** For most use cases, the comprehensive [`terraform-ci.yml`](#terraform-ci-example) workflow is recommended as it combines all checks efficiently.
 
 Refer to each workflow file for available inputs, secrets, and configuration options. When referencing workflows, it's recommended to use a specific version tag (e.g., `@v5.9.0`) rather than `@master` to ensure workflow stability.
 
