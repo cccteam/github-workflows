@@ -62,6 +62,12 @@ This repository provides a collection of reusable GitHub Actions workflow templa
   [`secrets-scanning.yml`](.github/workflows/secrets-scanning.yml):
   Performs secret scanning on the repository using TruffleHog to detect verified and unknown secrets.
 
+### Release Workflows
+
+- **Release Please**
+  [`release-please.yml`](.github/workflows/release-please.yml):
+  Automates versioning and releasing using release-please with GitHub App authentication for enhanced security.
+
 ## Usage
 
 To use a reusable workflow in your repository, create a workflow file in your `.github/workflows` directory that references one of the workflows in this repository using the `workflow_call` event.
@@ -137,7 +143,7 @@ The Angular CI workflow can run any npm script defined in your `package.json`. C
 name: Security Scan
 on:
   schedule:
-    - cron: '0 2 * * *'  # Daily at 2 AM UTC
+    - cron: '0 2 * * *' # Daily at 2 AM UTC
   workflow_dispatch:
 
 jobs:
@@ -178,7 +184,7 @@ jobs:
   checkov-scan:
     uses: cccteam/github-workflows/.github/workflows/checkov-scan.yml@v5.9.0
     with:
-      skip_check: "CKV_TF_1,CKV_GCP_18"  # Optional: skip specific checks
+      skip_check: 'CKV_TF_1,CKV_GCP_18' # Optional: skip specific checks
     permissions:
       contents: read
       actions: read
@@ -200,6 +206,54 @@ The release process is configured in [release-please-config.json](release-please
 - Versioning strategy
 - Changelog sections based on commit types
 - Package name and management
+
+### Setting up GitHub App Authentication
+
+For enhanced security and permissions, release-please can be configured to use GitHub App authentication instead of personal access tokens. This provides short-lived tokens with scoped permissions.
+
+1. Navigate to the appropriate level and create a GitHub App:
+   - For GitHub Enterprise Cloud: Go to your enterprise account > Settings > Developer settings > GitHub Apps > New GitHub App
+   - For an organization: Go to your organization > Settings > Developer settings > GitHub Apps > New GitHub App
+
+   Then configure the GitHub App with the following settings:
+
+   - **GitHub App name:** Choose a descriptive name (e.g., "Release Please Bot")
+   - **Homepage URL:** Set to any valid URL (e.g., your repository or organization URL)
+   - **Repository permissions:**
+     - Contents: Read and write
+     - Metadata: Read (included by default)
+     - Pull requests: Read and write
+   - **Organization permissions:** Ensure set to none
+   - **Account permissions:** Ensure set to none
+   - **Enterprise permissions:** Ensure set to none
+
+   **Note:** After creating the GitHub App, take note of the App ID displayed on the app's settings page - this will be used for the `RELEASE_PLEASE_APP_ID` secret.
+
+2. Install the app on the organizations or repositories within your enterprise (or organization) where release-please needs access.
+
+3. Generate a private key for the app and store it as an organization secret (recommended for multi-repo setups) or repository secret named `RELEASE_PLEASE_APP_PEM`.
+   **Note:** For security, do not store the private key elsewhere (e.g., password managers). If the key is compromised, rotate it through the GitHub App settings and replace the value stored in your actions secrets.
+
+4. Store the app ID as a repository secret named `RELEASE_PLEASE_APP_ID`.
+   **Note:** If the app is created at the enterprise level, ensure you use the enterprise app ID, not an organization-level app ID.
+
+5. Update your release-please workflow to include GitHub App token generation. It should look something like this sample workflow:
+
+```yaml
+- name: Generate GitHub App Token
+  uses: actions/create-github-app-token@v2
+  id: app-token
+  with:
+    app-id: ${{ secrets.RELEASE_PLEASE_APP_ID }}
+    private-key: ${{ secrets.RELEASE_PLEASE_APP_PEM }}
+
+- name: Run Release Please
+  uses: googleapis/release-please-action@v4
+  with:
+    token: ${{ steps.app-token.outputs.token }}
+    config-file: release-please-config.json
+    manifest-file: .release-please-manifest.json
+```
 
 ### Using a Specific Release Version
 
