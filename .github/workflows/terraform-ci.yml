@@ -312,15 +312,8 @@ jobs:
         with:
           scan-type: "config"
           scan-ref: ${{ steps.changed-files.outputs.dirs }}
-          format: ${{ inputs.upload_sarif && 'sarif' || 'table' }}
-          output-file: ${{ inputs.upload_sarif && 'trivy-results.sarif' || '' }}
+          format: "table"
           scanners: "vuln,secret,misconfig"
           severity: ${{ inputs.severity }}
           exit-code: ${{ inputs.exit_code }}
           skip-dirs: ${{ inputs.exclude_downloaded_modules && '.terraform' || '' }}
-
-      - name: Upload Trivy SARIF file
-        if: ${{ inputs.upload_sarif == true && (success() || failure()) }}
-        uses: github/codeql-action/upload-sarif@v4
-        with:
-          sarif_file: trivy-results.sarif
