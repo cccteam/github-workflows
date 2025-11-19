@@ -211,7 +211,11 @@ The release process is configured in [release-please-config.json](release-please
 
 For enhanced security and permissions, release-please can be configured to use GitHub App authentication instead of personal access tokens. This provides short-lived tokens with scoped permissions.
 
-1. Create a GitHub App at the enterprise level (for GitHub Enterprise Cloud) or in your organization with the following settings:
+1. Navigate to the appropriate level and create a GitHub App:
+   - For GitHub Enterprise Cloud: Go to your enterprise account > Settings > Developer settings > GitHub Apps > New GitHub App
+   - For an organization: Go to your organization > Settings > Developer settings > GitHub Apps > New GitHub App
+
+   Then configure the GitHub App with the following settings:
 
    - **GitHub App name:** Choose a descriptive name (e.g., "Release Please Bot")
    - **Homepage URL:** Set to any valid URL (e.g., your repository or organization URL)
