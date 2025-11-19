@@ -1,0 +1,342 @@
+# This Continuous Integration (CI) workflow template can be used in repositories that contain Terraform code.
+#
+# The following jobs are included:
+#  * terraform-docs: Formats Terraform files, generates documentation, and pushes changes
+#  * tflint: Runs TFLint on changed Terraform files
+#  * checkov-scan: Runs Checkov security scanning on changed Terraform files
+#  * trivy-terraform-scan: Runs Trivy security scanning on changed Terraform directories
+#
+# NOTE: Certain inputs are required, as detailed in the "inputs" section below.
+
+name: Terraform CI (Reusable)
+
+permissions:
+  contents: write
+  pull-requests: write
+  security-events: write
+
+on:
+  workflow_call:
+    inputs:
+      working_dirs:
+        description: Comma-separated list of directories containing Terraform configs
+        required: true
+        type: string
+      output_file:
+        description: Output file for generated docs
+        required: false
+        type: string
+        default: README.md
+      output_method:
+        description: Method to apply the generated docs (e.g., replace, inject)
+        required: false
+        type: string
+        default: replace
+      git_push:
+        description: Whether to push changes back to the PR
+        required: false
+        type: boolean
+        default: true
+      terraform_version:
+        description: "Terraform version to use"
+        required: false
+        type: string
+        default: "1.13.1"
+      format_mode:
+        description: "Mode for Terraform formatting: 'check' to fail if not formatted, 'format' to auto-format"
+        required: false
+        type: string
+        default: "format"
+      output_format:
+        description: "Output format for Checkov results (e.g., cli or cli,sarif)"
+        required: false
+        type: string
+        default: "cli"
+      output_file_path:
+        description: "Output file path for Checkov results (e.g., console or console,results.sarif)"
+        required: false
+        type: string
+        default: "console"
+      upload_sarif:
+        description: "Enable or disable SARIF file upload (true/false)"
+        required: false
+        type: boolean
+        default: false
+      skip_check:
+        description: "Comma-separated list of checks to skip (e.g., CKV_TF_1,CKV_GCP_18)"
+        required: false
+        type: string
+        default: ""
+      scan_dir:
+        description: "Directory containing Terraform files to check for changes (scanned recursively)"
+        required: false
+        type: string
+        default: "."
+      severity:
+        description: "Severity levels to scan (e.g., CRITICAL,HIGH)"
+        required: false
+        type: string
+        default: "CRITICAL,HIGH"
+      exclude_downloaded_modules:
+        description: "Skip scanning downloaded Terraform modules in .terraform directory"
+        required: false
+        type: boolean
+        default: true
+      exit_code:
+        description: "Exit code for Trivy scan failure (0 to continue, 1 to fail). Valid values: 0, 1"
+        required: false
+        type: number
+        default: 1
+    secrets:
+      app_id:
+        description: GitHub App ID for authentication
+        required: true
+      app_pem:
+        description: GitHub App private key for authentication
+        required: true
+
+jobs:
+  terraform-docs:
+    name: Format and document Terraform
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate GitHub App Token
+        uses: actions/create-github-app-token@v2
+        id: app-token
+        with:
+          app-id: ${{ secrets.app_id }}
+          private-key: ${{ secrets.app_pem }}
+
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3.1.2
+        with:
+          terraform_version: ${{ inputs.terraform_version }}
+
+      - name: Find changed Terraform directories
+        id: changed-files
+        run: |
+          # Get changed .tf and .tfvars files
+          CHANGED_FILES=$(git diff --name-only --diff-filter=ACMRTUXB origin/${{ github.base_ref }}...HEAD | grep -E '\.tf$|\.tfvars$' || true)
+          if [ -z "$CHANGED_FILES" ]; then
+            echo "No .tf or .tfvars files changed. Skipping format check."
+            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "dirs=" >> $GITHUB_OUTPUT
+          else
+            # Get unique directories of changed files
+            CHANGED_DIRS=$(echo "$CHANGED_FILES" | xargs -n 1 dirname | sort -u | tr '\n' ',' | sed 's/,$//')
+            echo "Changed Terraform directories: $CHANGED_DIRS"
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "dirs=$CHANGED_DIRS" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Check or Format Terraform files
+        if: steps.changed-files.outputs.changed == 'true'
+        run: |
+          #!/bin/bash
+          set -e
+          if ! command -v terraform &> /dev/null; then
+            echo "Error: Terraform is not installed."
+            exit 1
+          fi
+          DIRS="${{ steps.changed-files.outputs.dirs }}"
+          if [ -z "$DIRS" ]; then
+            echo "No directories to check. Skipping."
+            exit 0
+          fi
+          IFS=',' read -ra DIR_ARRAY <<< "$DIRS"
+          if [ "${{ inputs.format_mode }}" == "check" ]; then
+            FORMATTING_ISSUES=false
+            for DIR in "${DIR_ARRAY[@]}"; do
+              if [ -d "$DIR" ]; then
+                echo "Checking Terraform formatting in $DIR..."
+                if ! terraform fmt -check -diff -recursive "$DIR"; then
+                  FORMATTING_ISSUES=true
+                fi
+              else
+                echo "Warning: Directory $DIR does not exist, skipping."
+              fi
+            done
+            if $FORMATTING_ISSUES; then
+              echo "Error: Terraform files are not formatted correctly."
+              echo "Run 'terraform fmt -recursive' in the affected directories to fix formatting issues."
+              exit 1
+            fi
+            echo "All changed Terraform files are formatted correctly."
+          else
+            for DIR in "${DIR_ARRAY[@]}"; do
+              if [ -d "$DIR" ]; then
+                echo "Formatting Terraform files in $DIR..."
+                terraform fmt -recursive "$DIR"
+              fi
+            done
+            echo "Terraform files formatted."
+          fi
+
+      - name: Render Terraform docs and push changes
+        if: steps.changed-files.outputs.changed == 'true'
+        uses: terraform-docs/gh-actions@v1.4.1
+        with:
+          working-dir: ${{ inputs.working_dirs }}
+          output-file: ${{ inputs.output_file }}
+          output-method: ${{ inputs.output_method }}
+          git-push: ${{ inputs.git_push }}
+          git-push-user-name: github-actions[bot]
+          git-push-user-email: github-actions[bot]@users.noreply.github.com
+          git-push-token: ${{ steps.app-token.outputs.token }}
+
+  tflint:
+    name: Run TFLint on Changed Files
+    runs-on: ubuntu-latest
+    needs: terraform-docs
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up TFLint
+        uses: terraform-linters/setup-tflint@v6.2.1
+        with:
+          tflint_version: latest
+
+      - name: Initialize TFLint
+        run: tflint --init
+
+      - name: Identify changed Terraform files
+        id: changed-files
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git diff --name-only origin/${{ github.base_ref }}...HEAD
+          else
+            git diff --name-only HEAD^ HEAD
+          fi | grep -E '\.tf$|\.tfvars$' > changed_tf_files.txt || true
+          if [ -s changed_tf_files.txt ]; then
+            echo "Terraform files changed:"
+            cat changed_tf_files.txt
+            echo "has_tf_files=true" >> $GITHUB_OUTPUT
+          else
+            echo "No Terraform files changed, skipping TFLint."
+            echo "has_tf_files=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run TFLint on changed files
+        if: steps.changed-files.outputs.has_tf_files == 'true'
+        run: |
+          while IFS= read -r file; do
+            if [ -f "$file" ]; then
+              dir=$(dirname "$file")
+              echo "Running TFLint in directory: $dir"
+              tflint --chdir="$dir" --minimum-failure-severity=error
+            else
+              echo "Skipping deleted file: $file"
+            fi
+          done < changed_tf_files.txt
+
+  checkov-scan:
+    name: Run Checkov Scan on Changed Files
+    permissions:
+      contents: read
+      security-events: write
+
+    runs-on: ubuntu-latest
+    needs: terraform-docs
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Identify changed Terraform files
+        id: changed-files
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git diff --name-only origin/${{ github.base_ref }}...HEAD
+          else
+            git diff --name-only HEAD^ HEAD
+          fi | grep -E '\.tf$|\.tfvars$' > changed_tf_files.txt || true
+          if [ -s changed_tf_files.txt ]; then
+            CHANGED_FILES=$(paste -sd ' ' changed_tf_files.txt)
+            echo "files=$CHANGED_FILES" >> $GITHUB_OUTPUT
+            echo "has_files=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_files=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Checkov GitHub Action
+        if: steps.changed-files.outputs.has_files == 'true'
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          file: ${{ steps.changed-files.outputs.files }}
+          output_format: ${{ inputs.output_format }}
+          output_file_path: ${{ inputs.output_file_path }}
+          quiet: true
+          skip_check: ${{ inputs.skip_check }}
+
+      - name: Upload SARIF file
+        if: ${{ inputs.upload_sarif == true && (success() || failure()) }}
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: results.sarif
+
+  trivy-terraform-scan:
+    name: Run Trivy Scan on Changed Directories
+    runs-on: ubuntu-latest
+    needs: terraform-docs
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Validate base_ref
+        run: |
+          if [ -z "${{ github.base_ref }}" ]; then
+            echo "Error: github.base_ref is not set. This workflow is designed for pull requests."
+            exit 1
+          fi
+
+      - name: Find changed Terraform directories
+        id: changed-files
+        run: |
+          if [ ! -e "${{ inputs.scan_dir }}" ]; then
+            echo "Error: Path ${{ inputs.scan_dir }} does not exist."
+            exit 1
+          fi
+          # Sanitize scan_dir to prevent issues with special characters
+          SANITIZED_SCAN_DIR=$(echo "${{ inputs.scan_dir }}" | sed -E 's/[^a-zA-Z0-9./_-]//g')
+          CHANGED_FILES=$(git diff --name-only --diff-filter=ACMRTUXB origin/${{ github.base_ref }}...HEAD | grep -E '\.tf$|\.tfvars$' | grep "^${SANITIZED_SCAN_DIR}" || true)
+          if [ -z "$CHANGED_FILES" ]; then
+            echo "No .tf or .tfvars files changed in ${{ inputs.scan_dir }}. Skipping scan."
+            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "dirs=" >> $GITHUB_OUTPUT
+          else
+            # Get unique directories of changed files
+            CHANGED_DIRS=$(echo "$CHANGED_FILES" | xargs -n 1 dirname | sort -u | tr '\n' ',' | sed 's/,$//')
+            echo "Changed Terraform directories: $CHANGED_DIRS"
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "dirs=$CHANGED_DIRS" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Scan Terraform with Trivy
+        if: steps.changed-files.outputs.changed == 'true'
+        uses: aquasecurity/trivy-action@v0.33.1
+        with:
+          scan-type: "config"
+          scan-ref: ${{ steps.changed-files.outputs.dirs }}
+          format: ${{ inputs.upload_sarif && 'sarif' || 'table' }}
+          output-file: ${{ inputs.upload_sarif && 'trivy-results.sarif' || '' }}
+          scanners: "vuln,secret,misconfig"
+          severity: ${{ inputs.severity }}
+          exit-code: ${{ inputs.exit_code }}
+          skip-dirs: ${{ inputs.exclude_downloaded_modules && '.terraform' || '' }}
+
+      - name: Upload Trivy SARIF file
+        if: ${{ inputs.upload_sarif == true && (success() || failure()) }}
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-results.sarif
