@@ -220,7 +220,6 @@ For enhanced security and permissions, release-please can be configured to use G
    - **GitHub App name:** Choose a descriptive name (e.g., "Release Please Bot")
    - **Homepage URL:** Set to any valid URL (e.g., your repository or organization URL)
    - **Repository permissions:**
-     - Actions: Read
      - Contents: Read and write
      - Metadata: Read (included by default)
      - Pull requests: Read and write
