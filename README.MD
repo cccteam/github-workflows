@@ -237,7 +237,7 @@ For enhanced security and permissions, release-please can be configured to use G
 4. Store the app ID as a repository secret named `RELEASE_PLEASE_APP_ID`.
    **Note:** If the app is created at the enterprise level, ensure you use the enterprise app ID, not an organization-level app ID.
 
-5. Update your release-please workflow to include GitHub App token generation:
+5. Update your release-please workflow to include GitHub App token generation. It should look something like this sample workflow:
 
 ```yaml
 - name: Generate GitHub App Token
