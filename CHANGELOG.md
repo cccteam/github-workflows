@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.15.0](https://github.com/cccteam/github-workflows/compare/v5.14.1...v5.15.0) (2025-11-19)
+
+
+### Features
+
+* **release:** update README and workflow for GitHub App authentication ([#108](https://github.com/cccteam/github-workflows/issues/108)) ([90dc952](https://github.com/cccteam/github-workflows/commit/90dc952a53e3ae9b710df9557a38bc5cf9c1c6b6))
+
 ## [5.14.1](https://github.com/cccteam/github-workflows/compare/v5.14.0...v5.14.1) (2025-11-18)
 
 
