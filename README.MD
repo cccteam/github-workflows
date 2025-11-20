@@ -44,7 +44,7 @@ This repository provides a collection of reusable GitHub Actions workflow templa
 
 - **Secret Scanning**
   [`secrets-scanning.yml`](.github/workflows/secrets-scanning.yml):
-  Performs secret scanning on the repository using TruffleHog to detect verified and unknown secrets.
+  Performs secret scanning on the repository using TruffleHog to detect verified and unknown secrets. Supports SARIF upload to GitHub Security.
 
 ### Release Workflows
 
