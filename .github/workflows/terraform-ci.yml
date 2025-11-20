@@ -52,7 +52,7 @@ on:
         type: string
         default: 'console'
       upload_sarif:
-        description: 'Enable or disable SARIF file upload (true/false)'
+        description: 'Enable or disable SARIF file upload for Checkov and TFLint (true/false)'
         required: false
         type: boolean
         default: false
@@ -156,6 +156,9 @@ jobs:
     name: Run TFLint on Changed Files
     runs-on: ubuntu-latest
     needs: terraform-docs
+    permissions:
+      contents: read
+      security-events: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -194,11 +197,27 @@ jobs:
             if [ -f "$file" ]; then
               dir=$(dirname "$file")
               echo "Running TFLint in directory: $dir"
-              tflint --chdir="$dir" --minimum-failure-severity=error
+              if [ "${{ inputs.upload_sarif }}" = "true" ]; then
+                tflint --chdir="$dir" --format=sarif --output="$dir/tflint.sarif" --minimum-failure-severity=error
+              else
+                tflint --chdir="$dir" --minimum-failure-severity=error
+              fi
             else
               echo "Skipping deleted file: $file"
             fi
           done < changed_tf_files.txt
+
+      - name: Merge TFLint SARIF files
+        if: steps.changed-files.outputs.has_tf_files == 'true' && inputs.upload_sarif == true
+        run: |
+          # Merge all tflint.sarif files into one
+          find . -name "tflint.sarif" -exec jq -s 'reduce .[] as $item ({"version": "2.1.0", "runs": []}; .runs += $item.runs)' {} + > tflint-results.sarif || true
+
+      - name: Upload TFLint SARIF file
+        if: inputs.upload_sarif == true && (success() || failure())
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: tflint-results.sarif
 
   checkov-scan:
     name: Run Checkov Scan on Changed Files
