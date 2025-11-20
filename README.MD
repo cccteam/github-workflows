@@ -202,6 +202,7 @@ For enhanced security and permissions, release-please can be configured to use G
      - Contents: Read and write
      - Metadata: Read (included by default)
      - Pull requests: Read and write
+     - Workflows: Read and write
    - **Organization permissions:** Ensure set to none
    - **Account permissions:** Ensure set to none
    - **Enterprise permissions:** Ensure set to none
