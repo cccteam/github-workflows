@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.16.0](https://github.com/cccteam/github-workflows/compare/v5.15.0...v5.16.0) (2025-11-20)
+
+
+### Features
+
+* **ci:** enhance Terraform CI workflow ([#109](https://github.com/cccteam/github-workflows/issues/109)) ([7bab4dd](https://github.com/cccteam/github-workflows/commit/7bab4dd35d1666abf12a63c79b02513200800897))
+
 ## [5.15.0](https://github.com/cccteam/github-workflows/compare/v5.14.1...v5.15.0) (2025-11-19)
 
 
