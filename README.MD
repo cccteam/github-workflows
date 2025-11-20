@@ -30,27 +30,7 @@ This repository provides a collection of reusable GitHub Actions workflow templa
 
 - **Terraform CI**
   [`terraform-ci.yml`](.github/workflows/terraform-ci.yml):
-  Comprehensive Terraform CI workflow that auto-formats files (and pushes changes back to the PR), generates documentation, runs linting, and performs security scanning. Includes TFLint, Checkov, and Trivy scans optimized for changed files only.
-
-- **Terraform Format Check**
-  [`terraform-fmt.yml`](.github/workflows/terraform-fmt.yml):
-  Checks formatting of Terraform files in changed directories.
-
-- **Terraform Docs Generation**
-  [`terraform-docs.yml`](.github/workflows/terraform-docs.yml):
-  Generates and updates documentation for Terraform modules.
-
-- **Trivy Terraform Scan**
-  [`trivy-terraform-scan.yml`](.github/workflows/trivy-terraform-scan.yml):
-  Scans changed Terraform files for vulnerabilities, secrets, and misconfigurations using Trivy.
-
-- **Checkov Terraform Scan**
-  [`checkov-scan.yml`](.github/workflows/checkov-scan.yml):
-  Scans Terraform code for security and compliance issues using Checkov. Supports skipping specific checks via the `skip_check` input (comma-separated list of check IDs).
-
-- **TFLint Terraform Check**
-  [`tflint-terraform-check.yml`](.github/workflows/tflint-terraform-check.yml):
-  Runs [TFLint](https://github.com/terraform-linters/tflint) on changed Terraform files to enforce best practices and catch errors.
+  Comprehensive Terraform CI workflow that auto-formats files (and pushes changes back to the PR), generates documentation, runs linting, and performs security scanning. Includes TFLint and Checkov scans optimized for changed files only.
 
 ### PR Quality & Security Workflows
 
@@ -181,41 +161,11 @@ jobs:
     uses: cccteam/github-workflows/.github/workflows/terraform-ci.yml@v5.9.0
     with:
       working_dirs: 'terraform'
-      terraform_version: '1.6.0'
+      terraform_version: '1.9.0'
       upload_sarif: true     # Upload security results to GitHub Security
     secrets:
       app_id: ${{ secrets.TERRAFORM_APP_ID }}
       app_pem: ${{ secrets.TERRAFORM_APP_PEM }}
-```
-
-### Advanced Example with Multiple Workflows
-
-For repositories that need more granular control, individual Terraform workflows can be used:
-
-```yaml
-name: Infrastructure CI/CD
-on:
-  pull_request:
-    paths:
-      - 'terraform/**'
-
-jobs:
-  terraform-fmt:
-    uses: cccteam/github-workflows/.github/workflows/terraform-fmt.yml@v5.9.0
-
-  terraform-security:
-    uses: cccteam/github-workflows/.github/workflows/trivy-terraform-scan.yml@v5.9.0
-    with:
-      working-directory: 'terraform'
-
-  checkov-scan:
-    uses: cccteam/github-workflows/.github/workflows/checkov-scan.yml@v5.9.0
-    with:
-      skip_check: 'CKV_TF_1,CKV_GCP_18' # Optional: skip specific checks
-    permissions:
-      contents: read
-      actions: read
-      security-events: write
 ```
 
 **Note:** For most use cases, the comprehensive [`terraform-ci.yml`](#terraform-ci-example) workflow is recommended as it combines all checks efficiently.
