@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.17.0](https://github.com/cccteam/github-workflows/compare/v5.16.0...v5.17.0) (2025-11-24)
+
+
+### Features
+
+* allow configurable release-please file path ([#112](https://github.com/cccteam/github-workflows/issues/112)) ([338df21](https://github.com/cccteam/github-workflows/commit/338df210624053800823da1098924243bbbeb4e8))
+
 ## [5.16.0](https://github.com/cccteam/github-workflows/compare/v5.15.0...v5.16.0) (2025-11-20)
 
 
