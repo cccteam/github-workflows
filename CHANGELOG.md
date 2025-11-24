@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.17.1](https://github.com/cccteam/github-workflows/compare/v5.17.0...v5.17.1) (2025-11-24)
+
+
+### Bug Fixes
+
+* Fix bug in slack-github-action Post Message ([#115](https://github.com/cccteam/github-workflows/issues/115)) ([594ade8](https://github.com/cccteam/github-workflows/commit/594ade88716ae3363524821bcad395b9c8905a96))
+
 ## [5.17.0](https://github.com/cccteam/github-workflows/compare/v5.16.0...v5.17.0) (2025-11-24)
 
 
