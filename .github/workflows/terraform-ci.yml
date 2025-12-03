@@ -170,9 +170,6 @@ jobs:
         with:
           tflint_version: latest
 
-      - name: Initialize TFLint
-        run: tflint --init
-
       - name: Identify changed Terraform files
         id: changed-files
         run: |
@@ -197,11 +194,14 @@ jobs:
             if [ -f "$file" ]; then
               dir=$(dirname "$file")
               echo "Running TFLint in directory: $dir"
+              cd "$dir"
+              tflint --init
               if [ "${{ inputs.upload_sarif }}" = "true" ]; then
-                tflint --chdir="$dir" --format=sarif --output="$dir/tflint.sarif" --minimum-failure-severity=error
+                tflint --format=sarif --output="tflint.sarif" --minimum-failure-severity=error
               else
-                tflint --chdir="$dir" --minimum-failure-severity=error
+                tflint --minimum-failure-severity=error
               fi
+              cd - > /dev/null
             else
               echo "Skipping deleted file: $file"
             fi
