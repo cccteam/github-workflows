@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.17.2](https://github.com/cccteam/github-workflows/compare/v5.17.1...v5.17.2) (2025-12-03)
+
+
+### Bug Fixes
+
+* initialize tflint per directory in CI workflow ([#119](https://github.com/cccteam/github-workflows/issues/119)) ([828c84a](https://github.com/cccteam/github-workflows/commit/828c84a181d854dd90cb1f3c2ee536eaef984326))
+
 ## [5.17.1](https://github.com/cccteam/github-workflows/compare/v5.17.0...v5.17.1) (2025-11-24)
 
 
