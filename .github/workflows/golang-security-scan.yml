@@ -17,7 +17,7 @@ on:
       govulncheck-version:
         required: false
         type: string
-        default: 'latest'
+        default: "latest"
         description: Version of govulncheck to use
       execute-trivy-scan:
         required: false
@@ -27,7 +27,7 @@ on:
         required: false
         type: boolean
         default: true
-        description: 'Execute the Dependabot security alerts check'
+        description: "Execute the Dependabot security alerts check"
       execute-semgrep-scan:
         required: false
         type: boolean
@@ -36,20 +36,24 @@ on:
         required: false
         type: string
         default: .
+      release-please-config-file:
+        required: false
+        type: string
+        default: "release-please-config.json"
       docker-build-args:
         required: false
         type: string
-        default: '[]' # empty array
+        default: "[]" # empty array
         description: Json-formatted array of strings to pass to the docker build command as build args. e.g. '["arg1", "arg2"]'
       scan-latest-release:
         required: false
-        description: 'Scan the latest release of the repository in addition to the default branch'
+        description: "Scan the latest release of the repository in addition to the default branch"
         default: true
         type: boolean
       ignored-dependabot-alerts-path:
         required: false
         type: string
-        default: ''
+        default: ""
         description: >
           Path to a json file that contains a JSON array of Dependabot alerts to ignore.
           If not provided, no alerts will be ignored.
@@ -59,17 +63,17 @@ on:
         required: false
         type: boolean
         default: false
-        description: 'Upload SARIF report for GitHub Advanced Security Dashboard'
+        description: "Upload SARIF report for GitHub Advanced Security Dashboard"
       semgrep-config:
         required: false
         type: string
-        default: 'auto'
-        description: 'Semgrep configuration to use (auto, p/security-audit, p/owasp-top-ten, etc.)'
+        default: "auto"
+        description: "Semgrep configuration to use (auto, p/security-audit, p/owasp-top-ten, etc.)"
 
       runs-on:
         required: false
         type: string
-        default: 'ubuntu-latest'
+        default: "ubuntu-latest"
 
     secrets:
       SLACK_BOT_TOKEN:
@@ -87,7 +91,7 @@ jobs:
     name: Environment Setup
     runs-on: ${{ inputs.runs-on }}
     outputs:
-      checkout-refs: '[${{ steps.set_checkout_refs.outputs.checkout_refs }}]'
+      checkout-refs: "[${{ steps.set_checkout_refs.outputs.checkout_refs }}]"
     steps:
       - name: Get latest release
         if: ${{ inputs.scan-latest-release }}
@@ -110,24 +114,38 @@ jobs:
             echo "checkout_refs=''" >> $GITHUB_OUTPUT
           fi
 
+  detect-modules:
+    name: Detect Modules
+    runs-on: ${{ inputs.runs-on }}
+    outputs:
+      module-dirs: ${{ steps.set-modules.outputs.module-dirs }}
+    steps:
+      - uses: actions/checkout@v5
+      - id: set-modules
+        run: |
+          all_module_dirs=$(cat ${{ inputs.release-please-config-file }} 2>/dev/null | jq -csS --arg workingDir ${{ inputs.working-directory }} 'if length == 0 then ["\($workingDir)"] else ( ((.[0].packages | keys?) // []) | if length == 0 then ["\($workingDir)"] else map("\($workingDir)/\(.)") end) end')
+          echo "module-dirs=$all_module_dirs" >> $GITHUB_OUTPUT
+
   govulncheck:
-    needs: env-setup
+    needs: [env-setup, detect-modules]
     name: Go Vulnerability Check
     runs-on: ${{ inputs.runs-on }}
     strategy:
       fail-fast: false
       matrix:
         checkout-ref: ${{ fromJson(needs.env-setup.outputs.checkout-refs) }}
+        module-dir: ${{ fromJson(needs.detect-modules.outputs.module-dirs) }}
     steps:
       - name: Set report variables
         run: |
-          echo "REPORT_NAME=govulncheck-${{ matrix.checkout-ref == '' && '1' || '2' }}" >> $GITHUB_ENV
-          echo "REPORT_PATH=govulncheck-report-${{ matrix.checkout-ref == '' && '1' || '2' }}.txt" >> $GITHUB_ENV
+          SAFE_MODULE_DIR=$(echo "${{ matrix.module-dir }}" | sed 's|/|-|g' | sed 's|\.|-|g')
+          echo "REPORT_NAME=govulncheck-${{ matrix.checkout-ref == '' && '1' || '2' }}-$SAFE_MODULE_DIR" >> $GITHUB_ENV
+          echo "REPORT_PATH=govulncheck-report-${{ matrix.checkout-ref == '' && '1' || '2' }}-$SAFE_MODULE_DIR.txt" >> $GITHUB_ENV
 
       - name: Set up Go for govulncheck
         uses: actions/setup-go@v6
         with:
-          go-version: 'stable'
+          go-version: "stable"
           cache: false
 
       - name: Install govulncheck
@@ -142,14 +160,14 @@ jobs:
       - name: Set up Go for app
         uses: actions/setup-go@v6
         with:
-          go-version-file: ${{ inputs.working-directory }}/go.mod
+          go-version-file: ${{ matrix.module-dir }}/go.mod
           cache: false
 
       - name: Run govulncheck
         continue-on-error: true
         run: |
           set +e # Ensure the script does not exit immediately on error
-          govulncheck -C ${{ inputs.working-directory }} ./... > ${{ env.REPORT_PATH }}
+          govulncheck -C ${{ matrix.module-dir }} ./... > ${{ env.REPORT_PATH }}
           GOVULNCHECK_STATUS=$?
           if [ $GOVULNCHECK_STATUS -ne 0 ]; then
             touch vulnerabilities-found
@@ -171,6 +189,48 @@ jobs:
             echo "No vulnerabilities found"
           fi
         shell: bash
+
+  merge-govulncheck-reports:
+    needs: govulncheck
+    if: always()
+    runs-on: ${{ inputs.runs-on }}
+    steps:
+      - name: Download all govulncheck reports
+        uses: actions/download-artifact@v6
+        with:
+          pattern: govulncheck-*
+          merge-multiple: true
+          path: govulncheck-reports
+
+      - name: Merge reports
+        run: |
+          # Merge reports for ref 1 (current)
+          if ls govulncheck-reports/govulncheck-report-1-*.txt 1> /dev/null 2>&1; then
+            cat govulncheck-reports/govulncheck-report-1-*.txt > govulncheck-report-1.txt
+          else
+            echo "No reports for ref 1"
+          fi
+
+          # Merge reports for ref 2 (latest release)
+          if ls govulncheck-reports/govulncheck-report-2-*.txt 1> /dev/null 2>&1; then
+            cat govulncheck-reports/govulncheck-report-2-*.txt > govulncheck-report-2.txt
+          else
+            echo "No reports for ref 2"
+          fi
+
+      - name: Upload merged report 1
+        if: hashFiles('govulncheck-report-1.txt') != ''
+        uses: actions/upload-artifact@v5
+        with:
+          name: govulncheck-1
+          path: govulncheck-report-1.txt
+
+      - name: Upload merged report 2
+        if: hashFiles('govulncheck-report-2.txt') != ''
+        uses: actions/upload-artifact@v5
+        with:
+          name: govulncheck-2
+          path: govulncheck-report-2.txt
 
   semgrep_scan:
     needs: env-setup
@@ -238,12 +298,12 @@ jobs:
         id: trivy_scan
         uses: aquasecurity/trivy-action@0.33.1
         with:
-          image-ref: '${{ env.REPO_NAME }}:latest'
-          format: 'table'
+          image-ref: "${{ env.REPO_NAME }}:latest"
+          format: "table"
           output: ${{ env.REPORT_PATH }}
-          vuln-type: 'os,library'
-          severity: 'LOW,MEDIUM,HIGH,CRITICAL'
-          exit-code: '1'
+          vuln-type: "os,library"
+          severity: "LOW,MEDIUM,HIGH,CRITICAL"
+          exit-code: "1"
         continue-on-error: true
 
       - name: Save Trivy report as artifact
@@ -324,7 +384,7 @@ jobs:
       fail-fast: false
       matrix:
         label: [govulncheck, trivy, dependabot]
-    needs: [govulncheck, trivy, dependabot]
+    needs: [govulncheck, trivy, dependabot, merge-govulncheck-reports]
     if: always()
     steps:
       - name: Setup environment for this matrix job
