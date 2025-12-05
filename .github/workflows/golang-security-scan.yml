@@ -573,4 +573,4 @@ jobs:
           token: ${{ secrets.SLACK_BOT_TOKEN }}
           payload: |
             channel: ${{ inputs.slack-channel-id || secrets.SLACK_CHANNEL_ID }}
-            text: ${{ env.SLACK_MESSAGE }}
+            text: ${{ toJSON(env.SLACK_MESSAGE) }}
