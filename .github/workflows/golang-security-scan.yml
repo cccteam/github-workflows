@@ -138,7 +138,7 @@ jobs:
     steps:
       - name: Set report variables
         run: |
-          SAFE_MODULE_DIR=$(echo "${{ matrix.module-dir }}" | sed 's|/|-|g' | sed 's|\.|-|g')
+          SAFE_MODULE_DIR=$(echo "${{ matrix.module-dir }}" | sed 's|^\./||' | sed 's|/|-|g' | sed 's|\.|-|g')
           echo "REPORT_NAME=govulncheck-${{ matrix.checkout-ref == '' && '1' || '2' }}-$SAFE_MODULE_DIR" >> $GITHUB_ENV
           echo "REPORT_PATH=govulncheck-report-${{ matrix.checkout-ref == '' && '1' || '2' }}-$SAFE_MODULE_DIR.txt" >> $GITHUB_ENV
 
