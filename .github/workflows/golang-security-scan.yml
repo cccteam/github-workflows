@@ -17,7 +17,7 @@ on:
       govulncheck-version:
         required: false
         type: string
-        default: "latest"
+        default: 'latest'
         description: Version of govulncheck to use
       execute-trivy-scan:
         required: false
@@ -27,7 +27,7 @@ on:
         required: false
         type: boolean
         default: true
-        description: "Execute the Dependabot security alerts check"
+        description: 'Execute the Dependabot security alerts check'
       execute-semgrep-scan:
         required: false
         type: boolean
@@ -39,21 +39,21 @@ on:
       release-please-config-file:
         required: false
         type: string
-        default: "release-please-config.json"
+        default: 'release-please-config.json'
       docker-build-args:
         required: false
         type: string
-        default: "[]" # empty array
+        default: '[]' # empty array
         description: Json-formatted array of strings to pass to the docker build command as build args. e.g. '["arg1", "arg2"]'
       scan-latest-release:
         required: false
-        description: "Scan the latest release of the repository in addition to the default branch"
+        description: 'Scan the latest release of the repository in addition to the default branch'
         default: true
         type: boolean
       ignored-dependabot-alerts-path:
         required: false
         type: string
-        default: ""
+        default: ''
         description: >
           Path to a json file that contains a JSON array of Dependabot alerts to ignore.
           If not provided, no alerts will be ignored.
@@ -63,17 +63,17 @@ on:
         required: false
         type: boolean
         default: false
-        description: "Upload SARIF report for GitHub Advanced Security Dashboard"
+        description: 'Upload SARIF report for GitHub Advanced Security Dashboard'
       semgrep-config:
         required: false
         type: string
-        default: "auto"
-        description: "Semgrep configuration to use (auto, p/security-audit, p/owasp-top-ten, etc.)"
+        default: 'auto'
+        description: 'Semgrep configuration to use (auto, p/security-audit, p/owasp-top-ten, etc.)'
 
       runs-on:
         required: false
         type: string
-        default: "ubuntu-latest"
+        default: 'ubuntu-latest'
 
     secrets:
       SLACK_BOT_TOKEN:
@@ -91,7 +91,7 @@ jobs:
     name: Environment Setup
     runs-on: ${{ inputs.runs-on }}
     outputs:
-      checkout-refs: "[${{ steps.set_checkout_refs.outputs.checkout_refs }}]"
+      checkout-refs: '[${{ steps.set_checkout_refs.outputs.checkout_refs }}]'
     steps:
       - name: Get latest release
         if: ${{ inputs.scan-latest-release }}
@@ -145,7 +145,7 @@ jobs:
       - name: Set up Go for govulncheck
         uses: actions/setup-go@v6
         with:
-          go-version: "stable"
+          go-version: 'stable'
           cache: false
 
       - name: Install govulncheck
@@ -312,12 +312,12 @@ jobs:
         id: trivy_scan
         uses: aquasecurity/trivy-action@0.33.1
         with:
-          image-ref: "${{ env.REPO_NAME }}:latest"
-          format: "table"
+          image-ref: '${{ env.REPO_NAME }}:latest'
+          format: 'table'
           output: ${{ env.REPORT_PATH }}
-          vuln-type: "os,library"
-          severity: "LOW,MEDIUM,HIGH,CRITICAL"
-          exit-code: "1"
+          vuln-type: 'os,library'
+          severity: 'LOW,MEDIUM,HIGH,CRITICAL'
+          exit-code: '1'
         continue-on-error: true
 
       - name: Save Trivy report as artifact
