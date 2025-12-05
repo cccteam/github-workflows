@@ -206,14 +206,28 @@ jobs:
         run: |
           # Merge reports for ref 1 (current)
           if ls govulncheck-reports/govulncheck-report-1-*.txt 1> /dev/null 2>&1; then
-            cat govulncheck-reports/govulncheck-report-1-*.txt > govulncheck-report-1.txt
+            for f in govulncheck-reports/govulncheck-report-1-*.txt; do
+              module_name=$(basename "$f" | sed 's/^govulncheck-report-1-//; s/\.txt$//')
+              echo "----------------------------------------------------------------" >> govulncheck-report-1.txt
+              echo "Module: $module_name" >> govulncheck-report-1.txt
+              echo "----------------------------------------------------------------" >> govulncheck-report-1.txt
+              cat "$f" >> govulncheck-report-1.txt
+              echo -e "\n" >> govulncheck-report-1.txt
+            done
           else
             echo "No reports for ref 1"
           fi
 
           # Merge reports for ref 2 (latest release)
           if ls govulncheck-reports/govulncheck-report-2-*.txt 1> /dev/null 2>&1; then
-            cat govulncheck-reports/govulncheck-report-2-*.txt > govulncheck-report-2.txt
+            for f in govulncheck-reports/govulncheck-report-2-*.txt; do
+              module_name=$(basename "$f" | sed 's/^govulncheck-report-2-//; s/\.txt$//')
+              echo "----------------------------------------------------------------" >> govulncheck-report-2.txt
+              echo "Module: $module_name" >> govulncheck-report-2.txt
+              echo "----------------------------------------------------------------" >> govulncheck-report-2.txt
+              cat "$f" >> govulncheck-report-2.txt
+              echo -e "\n" >> govulncheck-report-2.txt
+            done
           else
             echo "No reports for ref 2"
           fi
