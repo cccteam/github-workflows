@@ -118,13 +118,13 @@ jobs:
     name: Detect Modules
     runs-on: ${{ inputs.runs-on }}
     outputs:
-      module-dirs: ${{ steps.set-modules.outputs.module-dirs }}
+      modules: ${{ steps.set-modules.outputs.modules }}
     steps:
       - uses: actions/checkout@v5
       - id: set-modules
         run: |
-          all_module_dirs=$(cat ${{ inputs.release-please-config-file }} 2>/dev/null | jq -csS --arg workingDir ${{ inputs.working-directory }} 'if length == 0 then ["\($workingDir)"] else ( ((.[0].packages | keys?) // []) | if length == 0 then ["\($workingDir)"] else map("\($workingDir)/\(.)") end) end')
-          echo "module-dirs=$all_module_dirs" >> $GITHUB_OUTPUT
+          modules=$(cat ${{ inputs.release-please-config-file }} 2>/dev/null | jq -csS --arg workingDir ${{ inputs.working-directory }} 'if length == 0 then [{dir: $workingDir, name: "root"}] else (.[0].packages // {}) | to_entries | if length == 0 then [{dir: $workingDir, name: "root"}] else map({dir: (if .key == "." then $workingDir else "\($workingDir)/\(.key)" end), name: (.value."package-name" // (if .key == "." then "root" else .key end))}) end end')
+          echo "modules=$modules" >> $GITHUB_OUTPUT
 
   govulncheck:
     needs: [env-setup, detect-modules]
@@ -134,13 +134,13 @@ jobs:
       fail-fast: false
       matrix:
         checkout-ref: ${{ fromJson(needs.env-setup.outputs.checkout-refs) }}
-        module-dir: ${{ fromJson(needs.detect-modules.outputs.module-dirs) }}
+        module: ${{ fromJson(needs.detect-modules.outputs.modules) }}
     steps:
       - name: Set report variables
         run: |
-          SAFE_MODULE_DIR=$(echo "${{ matrix.module-dir }}" | sed 's|^\./||' | sed 's|/|-|g' | sed 's|\.|-|g')
-          echo "REPORT_NAME=govulncheck-${{ matrix.checkout-ref == '' && '1' || '2' }}-$SAFE_MODULE_DIR" >> $GITHUB_ENV
-          echo "REPORT_PATH=govulncheck-report-${{ matrix.checkout-ref == '' && '1' || '2' }}-$SAFE_MODULE_DIR.txt" >> $GITHUB_ENV
+          SAFE_MODULE_NAME=$(echo "${{ matrix.module.name }}" | sed 's|/|-|g' | sed 's|\.|-|g')
+          echo "REPORT_NAME=govulncheck-${{ matrix.checkout-ref == '' && '1' || '2' }}-$SAFE_MODULE_NAME" >> $GITHUB_ENV
+          echo "REPORT_PATH=govulncheck-report-${{ matrix.checkout-ref == '' && '1' || '2' }}-$SAFE_MODULE_NAME.txt" >> $GITHUB_ENV
 
       - name: Set up Go for govulncheck
         uses: actions/setup-go@v6
@@ -160,16 +160,15 @@ jobs:
       - name: Set up Go for app
         uses: actions/setup-go@v6
         with:
-          go-version-file: ${{ matrix.module-dir }}/go.mod
+          go-version-file: ${{ matrix.module.dir }}/go.mod
           cache: false
 
       - name: Run govulncheck
         continue-on-error: true
         run: |
           set +e # Ensure the script does not exit immediately on error
-          govulncheck -C ${{ matrix.module-dir }} ./... > ${{ env.REPORT_PATH }}
-          GOVULNCHECK_STATUS=$?
-          if [ $GOVULNCHECK_STATUS -ne 0 ]; then
+          govulncheck -C ${{ matrix.module.dir }} ./... > ${{ env.REPORT_PATH }}
+          if ! grep -q "No vulnerabilities found." ${{ env.REPORT_PATH }}; then
             touch vulnerabilities-found
           fi
         shell: bash
