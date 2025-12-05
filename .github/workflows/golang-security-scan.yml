@@ -168,7 +168,8 @@ jobs:
         run: |
           set +e # Ensure the script does not exit immediately on error
           govulncheck -C ${{ matrix.module.dir }} ./... > ${{ env.REPORT_PATH }}
-          if ! grep -q "No vulnerabilities found." ${{ env.REPORT_PATH }}; then
+          GOVULNCHECK_STATUS=$?
+          if [ $GOVULNCHECK_STATUS -ne 0 ]; then
             touch vulnerabilities-found
           fi
         shell: bash
