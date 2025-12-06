@@ -36,6 +36,10 @@ on:
         required: false
         type: string
         default: .
+      release-please-config-file:
+        required: false
+        type: string
+        default: 'release-please-config.json'
       docker-build-args:
         required: false
         type: string
@@ -110,19 +114,33 @@ jobs:
             echo "checkout_refs=''" >> $GITHUB_OUTPUT
           fi
 
+  detect-modules:
+    name: Detect Modules
+    runs-on: ${{ inputs.runs-on }}
+    outputs:
+      modules: ${{ steps.set-modules.outputs.modules }}
+    steps:
+      - uses: actions/checkout@v5
+      - id: set-modules
+        run: |
+          modules=$(cat ${{ inputs.release-please-config-file }} 2>/dev/null | jq -csS --arg workingDir ${{ inputs.working-directory }} 'if length == 0 then [{dir: "\($workingDir)", name: ""}] else (.[0].packages // {}) | to_entries | if length == 0 then [{dir: "\($workingDir)", name: ""}] else map({dir: (if .key == "." then "\($workingDir)" else "\($workingDir)/\(.key)" end), name: (.value."package-name" // (if .key == "." then "" else .key end))}) end end')
+          echo "modules=$modules" >> $GITHUB_OUTPUT
+
   govulncheck:
-    needs: env-setup
+    needs: [env-setup, detect-modules]
     name: Go Vulnerability Check
     runs-on: ${{ inputs.runs-on }}
     strategy:
       fail-fast: false
       matrix:
         checkout-ref: ${{ fromJson(needs.env-setup.outputs.checkout-refs) }}
+        module: ${{ fromJson(needs.detect-modules.outputs.modules) }}
     steps:
       - name: Set report variables
         run: |
-          echo "REPORT_NAME=govulncheck-${{ matrix.checkout-ref == '' && '1' || '2' }}" >> $GITHUB_ENV
-          echo "REPORT_PATH=govulncheck-report-${{ matrix.checkout-ref == '' && '1' || '2' }}.txt" >> $GITHUB_ENV
+          SAFE_MODULE_NAME=$(echo "${{ matrix.module.name }}" | sed 's|[./]|-|g')
+          echo "REPORT_NAME=govulncheck-${{ matrix.checkout-ref == '' && '1' || '2' }}-$SAFE_MODULE_NAME" >> $GITHUB_ENV
+          echo "REPORT_PATH=govulncheck-report-${{ matrix.checkout-ref == '' && '1' || '2' }}-$SAFE_MODULE_NAME.txt" >> $GITHUB_ENV
 
       - name: Set up Go for govulncheck
         uses: actions/setup-go@v6
@@ -142,14 +160,14 @@ jobs:
       - name: Set up Go for app
         uses: actions/setup-go@v6
         with:
-          go-version-file: ${{ inputs.working-directory }}/go.mod
+          go-version-file: ${{ matrix.module.dir }}/go.mod
           cache: false
 
       - name: Run govulncheck
         continue-on-error: true
         run: |
           set +e # Ensure the script does not exit immediately on error
-          govulncheck -C ${{ inputs.working-directory }} ./... > ${{ env.REPORT_PATH }}
+          govulncheck -C ${{ matrix.module.dir }} ./... > ${{ env.REPORT_PATH }}
           GOVULNCHECK_STATUS=$?
           if [ $GOVULNCHECK_STATUS -ne 0 ]; then
             touch vulnerabilities-found
@@ -171,6 +189,52 @@ jobs:
             echo "No vulnerabilities found"
           fi
         shell: bash
+
+  merge-govulncheck-reports:
+    needs: govulncheck
+    if: always()
+    runs-on: ${{ inputs.runs-on }}
+    steps:
+      - name: Download all govulncheck reports
+        uses: actions/download-artifact@v6
+        with:
+          pattern: govulncheck-*
+          merge-multiple: true
+          path: govulncheck-reports
+
+      - name: Merge reports
+        run: |
+          for ref in 1 2; do
+            report_files="govulncheck-reports/govulncheck-report-${ref}-*.txt"
+            merged_report="govulncheck-report-${ref}.txt"
+            if ls $report_files 1> /dev/null 2>&1; then
+              for f in $report_files; do
+                module_name=$(basename "$f" | sed "s/^govulncheck-report-${ref}-//; s/\.txt$//")
+                echo "----------------------------------------------------------------" >> "$merged_report"
+                echo "Module: $module_name" >> "$merged_report"
+                echo "----------------------------------------------------------------" >> "$merged_report"
+                cat "$f" >> "$merged_report"
+                echo >> "$merged_report"
+                echo >> "$merged_report"
+              done
+            else
+              echo "No reports for ref $ref"
+            fi
+          done
+
+      - name: Upload merged report 1
+        if: hashFiles('govulncheck-report-1.txt') != ''
+        uses: actions/upload-artifact@v5
+        with:
+          name: govulncheck-1
+          path: govulncheck-report-1.txt
+
+      - name: Upload merged report 2
+        if: hashFiles('govulncheck-report-2.txt') != ''
+        uses: actions/upload-artifact@v5
+        with:
+          name: govulncheck-2
+          path: govulncheck-report-2.txt
 
   semgrep_scan:
     needs: env-setup
@@ -324,7 +388,7 @@ jobs:
       fail-fast: false
       matrix:
         label: [govulncheck, trivy, dependabot]
-    needs: [govulncheck, trivy, dependabot]
+    needs: [govulncheck, trivy, dependabot, merge-govulncheck-reports]
     if: always()
     steps:
       - name: Setup environment for this matrix job
@@ -499,4 +563,4 @@ jobs:
           token: ${{ secrets.SLACK_BOT_TOKEN }}
           payload: |
             channel: ${{ inputs.slack-channel-id || secrets.SLACK_CHANNEL_ID }}
-            text: ${{ env.SLACK_MESSAGE }}
+            text: ${{ toJSON(env.SLACK_MESSAGE) }}
