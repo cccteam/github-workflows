@@ -123,7 +123,7 @@ jobs:
       - uses: actions/checkout@v5
       - id: set-modules
         run: |
-          modules=$(cat ${{ inputs.release-please-config-file }} 2>/dev/null | jq -csS --arg workingDir ${{ inputs.working-directory }} 'if length == 0 then [{dir: $workingDir, name: "root"}] else (.[0].packages // {}) | to_entries | if length == 0 then [{dir: $workingDir, name: "root"}] else map({dir: (if .key == "." then $workingDir else "\($workingDir)/\(.key)" end), name: (.value."package-name" // (if .key == "." then "root" else .key end))}) end end')
+          modules=$(cat ${{ inputs.release-please-config-file }} 2>/dev/null | jq -csS --arg workingDir ${{ inputs.working-directory }} 'if length == 0 then [{dir: "\($workingDir)", name: ""}] else (.[0].packages // {}) | to_entries | if length == 0 then [{dir: "\($workingDir)", name: ""}] else map({dir: (if .key == "." then "\($workingDir)" else "\($workingDir)/\(.key)" end), name: (.value."package-name" // (if .key == "." then "" else .key end))}) end end')
           echo "modules=$modules" >> $GITHUB_OUTPUT
 
   govulncheck:
@@ -138,7 +138,7 @@ jobs:
     steps:
       - name: Set report variables
         run: |
-          SAFE_MODULE_NAME=$(echo "${{ matrix.module.name }}" | sed 's|/|-|g' | sed 's|\.|-|g')
+          SAFE_MODULE_NAME=$(echo "${{ matrix.module.name }}" | sed 's|[./]|-|g')
           echo "REPORT_NAME=govulncheck-${{ matrix.checkout-ref == '' && '1' || '2' }}-$SAFE_MODULE_NAME" >> $GITHUB_ENV
           echo "REPORT_PATH=govulncheck-report-${{ matrix.checkout-ref == '' && '1' || '2' }}-$SAFE_MODULE_NAME.txt" >> $GITHUB_ENV
 
@@ -204,31 +204,23 @@ jobs:
 
       - name: Merge reports
         run: |
-          if ls govulncheck-reports/govulncheck-report-1-*.txt 1> /dev/null 2>&1; then
-            for f in govulncheck-reports/govulncheck-report-1-*.txt; do
-              module_name=$(basename "$f" | sed 's/^govulncheck-report-1-//; s/\.txt$//')
-              echo "----------------------------------------------------------------" >> govulncheck-report-1.txt
-              echo "Module: $module_name" >> govulncheck-report-1.txt
-              echo "----------------------------------------------------------------" >> govulncheck-report-1.txt
-              cat "$f" >> govulncheck-report-1.txt
-              echo -e "\n" >> govulncheck-report-1.txt
-            done
-          else
-            echo "No reports for ref 1"
-          fi
-
-          if ls govulncheck-reports/govulncheck-report-2-*.txt 1> /dev/null 2>&1; then
-            for f in govulncheck-reports/govulncheck-report-2-*.txt; do
-              module_name=$(basename "$f" | sed 's/^govulncheck-report-2-//; s/\.txt$//')
-              echo "----------------------------------------------------------------" >> govulncheck-report-2.txt
-              echo "Module: $module_name" >> govulncheck-report-2.txt
-              echo "----------------------------------------------------------------" >> govulncheck-report-2.txt
-              cat "$f" >> govulncheck-report-2.txt
-              echo -e "\n" >> govulncheck-report-2.txt
-            done
-          else
-            echo "No reports for ref 2"
-          fi
+          for ref in 1 2; do
+            report_files="govulncheck-reports/govulncheck-report-${ref}-*.txt"
+            merged_report="govulncheck-report-${ref}.txt"
+            if ls $report_files 1> /dev/null 2>&1; then
+              for f in $report_files; do
+                module_name=$(basename "$f" | sed "s/^govulncheck-report-${ref}-//; s/\.txt$//")
+                echo "----------------------------------------------------------------" >> "$merged_report"
+                echo "Module: $module_name" >> "$merged_report"
+                echo "----------------------------------------------------------------" >> "$merged_report"
+                cat "$f" >> "$merged_report"
+                echo >> "$merged_report"
+                echo >> "$merged_report"
+              done
+            else
+              echo "No reports for ref $ref"
+            fi
+          done
 
       - name: Upload merged report 1
         if: hashFiles('govulncheck-report-1.txt') != ''
