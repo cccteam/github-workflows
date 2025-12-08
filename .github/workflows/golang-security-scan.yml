@@ -120,7 +120,7 @@ jobs:
     outputs:
       modules: ${{ steps.set-modules.outputs.modules }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - id: set-modules
         run: |
           modules=$(cat ${{ inputs.release-please-config-file }} 2>/dev/null | jq -csS --arg workingDir ${{ inputs.working-directory }} 'if length == 0 then [{dir: "\($workingDir)", name: ""}] else (.[0].packages // {}) | to_entries | if length == 0 then [{dir: "\($workingDir)", name: ""}] else map({dir: (if .key == "." then "\($workingDir)" else "\($workingDir)/\(.key)" end), name: (.value."package-name" // (if .key == "." then "" else .key end))}) end end')
@@ -152,7 +152,7 @@ jobs:
         run: go install golang.org/x/vuln/cmd/govulncheck@${{ inputs.govulncheck-version }}
         shell: bash
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           ref: ${{ matrix.checkout-ref }}
           fetch-tags: true
@@ -249,7 +249,7 @@ jobs:
       image: semgrep/semgrep
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
       - name: Perform Semgrep Analysis and Generate SARIF
         if: inputs.upload-sarif
         run: |
@@ -260,7 +260,7 @@ jobs:
           semgrep scan --config ${{ inputs.semgrep-config }}
       - name: Upload SARIF file for GitHub Advanced Security Dashboard
         if: inputs.upload-sarif
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: semgrep.sarif
           category: semgrep
@@ -280,7 +280,7 @@ jobs:
           echo "REPORT_NAME=trivy-${{ matrix.checkout-ref == '' && '1' || '2' }}" >> $GITHUB_ENV
           echo "REPORT_PATH=trivy-report-${{ matrix.checkout-ref == '' && '1' || '2' }}.txt" >> $GITHUB_ENV
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           ref: ${{ matrix.checkout-ref }}
           fetch-tags: true
@@ -327,7 +327,7 @@ jobs:
     if: ${{ inputs.execute-dependabot-check }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: Prepare ignored alerts file
         run: |
