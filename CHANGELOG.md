@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.18.0](https://github.com/cccteam/github-workflows/compare/v5.17.2...v5.18.0) (2025-12-08)
+
+
+### Features
+
+* Support security scan on go monorepo ([#121](https://github.com/cccteam/github-workflows/issues/121)) ([b609c29](https://github.com/cccteam/github-workflows/commit/b609c298faaca368e08ecfe96dd029954b79b8c7))
+
 ## [5.17.2](https://github.com/cccteam/github-workflows/compare/v5.17.1...v5.17.2) (2025-12-03)
 
 
