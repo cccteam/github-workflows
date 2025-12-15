@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.18.1](https://github.com/cccteam/github-workflows/compare/v5.18.0...v5.18.1) (2025-12-15)
+
+
+### Bug Fixes
+
+* resolve terraform-docs ([#124](https://github.com/cccteam/github-workflows/issues/124)) ([9de1168](https://github.com/cccteam/github-workflows/commit/9de1168bc239ad82f445bd27e4cbc4e1f47d455d))
+
 ## [5.18.0](https://github.com/cccteam/github-workflows/compare/v5.17.2...v5.18.0) (2025-12-08)
 
 
