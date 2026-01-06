@@ -22,11 +22,6 @@ on:
         required: false
         type: string
         default: '["build", "lint"]'
-      build-env:
-        description: 'List of environment variables to set during build (e.g., ["APP_DEPLOYMENT=prd", "NODE_ENV=production"])'
-        required: false
-        type: string
-        default: '[]'
 
 jobs:
   angular:
@@ -62,13 +57,6 @@ jobs:
       - name: Run commands for each project
         working-directory: ${{ inputs.working-directory }}
         run: |
-          # Set environment variables from build-env input
-          build_env='${{ inputs.build-env }}'
-          for env_var in $(echo $build_env | jq -r '.[]'); do
-            export "$env_var"
-            echo "Set environment variable: ${env_var%%=*}"
-          done
-
           projects='${{ steps.find-projects.outputs.projects }}'
           commands='${{ inputs.commands }}'
           echo "Running commands for projects: $projects"
