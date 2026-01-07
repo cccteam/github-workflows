@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.19.0](https://github.com/cccteam/github-workflows/compare/v5.18.1...v5.19.0) (2026-01-07)
+
+
+### Features
+
+* **workflows:** update action versions for consistency ([#127](https://github.com/cccteam/github-workflows/issues/127)) ([b8e27c0](https://github.com/cccteam/github-workflows/commit/b8e27c0ced9e222ca8161040c8796b63a380d561))
+
 ## [5.18.1](https://github.com/cccteam/github-workflows/compare/v5.18.0...v5.18.1) (2025-12-15)
 
 
