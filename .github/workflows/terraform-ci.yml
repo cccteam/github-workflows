@@ -16,9 +16,10 @@ on:
   workflow_call:
     inputs:
       working_dirs:
-        description: Comma-separated list of directories containing Terraform configs
-        required: true
+        description: '(Deprecated) Comma-separated list of directories containing Terraform configs. Now auto-detected from changed files.'
+        required: false
         type: string
+        default: ''
       output_file:
         description: Output file for generated docs
         required: false
@@ -88,6 +89,13 @@ jobs:
           token: ${{ steps.app-token.outputs.token }}
           fetch-depth: 0
 
+      - name: Warn about deprecated working_dirs input
+        if: inputs.working_dirs != ''
+        run: |
+          echo "⚠️  WARNING: The 'working_dirs' input is deprecated and no longer used."
+          echo "The workflow now automatically detects changed Terraform directories."
+          echo "You can safely remove 'working_dirs' from your workflow configuration."
+
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3.1.2
         with:
@@ -146,7 +154,7 @@ jobs:
         if: steps.changed-files.outputs.changed == 'true'
         uses: terraform-docs/gh-actions@v1.4.1
         with:
-          working-dir: ${{ inputs.working_dirs }}
+          working-dir: ${{ steps.changed-files.outputs.dirs }}
           output-file: ${{ inputs.output_file }}
           output-method: ${{ inputs.output_method }}
           git-push: ${{ inputs.git_push }}
@@ -214,11 +222,11 @@ jobs:
           set -e
           DIRS='${{ needs.detect-changed-dirs.outputs.dirs }}'
           UPLOAD_SARIF='${{ inputs.upload_sarif }}'
-          
+
           if [ "$UPLOAD_SARIF" = "true" ]; then
             mkdir -p /tmp/sarif
           fi
-          
+
           echo "$DIRS" | jq -r '.[]' | while read DIR; do
             if [ -z "$DIR" ]; then
               continue
