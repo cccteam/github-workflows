@@ -197,10 +197,6 @@ jobs:
       security-events: write
       actions: read
     if: needs.detect-changed-dirs.outputs.has_changes == 'true'
-    strategy:
-      fail-fast: false
-      matrix:
-        dir: ${{ fromJson(needs.detect-changed-dirs.outputs.dirs) }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -212,22 +208,45 @@ jobs:
         with:
           tflint_version: latest
 
-      - name: Run TFLint
+      - name: Run TFLint on all changed directories
         run: |
-          cd ${{ matrix.dir }}
-          tflint --init
-          if [ "${{ inputs.upload_sarif }}" = "true" ]; then
-            tflint --format=sarif --minimum-failure-severity=error > tflint.sarif
-          else
-            tflint --minimum-failure-severity=error
+          #!/bin/bash
+          set -e
+          DIRS='${{ needs.detect-changed-dirs.outputs.dirs }}'
+          UPLOAD_SARIF='${{ inputs.upload_sarif }}'
+
+          if [ "$UPLOAD_SARIF" = "true" ]; then
+            mkdir -p /tmp/sarif
           fi
 
-      - name: Upload TFLint SARIF file
-        if: inputs.upload_sarif == true && hashFiles(format('{0}/tflint.sarif', matrix.dir)) != ''
-        uses: github/codeql-action/upload-sarif@v4
-        with:
-          sarif_file: ${{ matrix.dir }}/tflint.sarif
-          category: tflint-${{ matrix.dir }}
+          echo "$DIRS" | jq -r '.[]' | while read DIR; do
+            if [ -z "$DIR" ]; then
+              continue
+            fi
+            echo "Running TFLint in $DIR..."
+            cd "$GITHUB_WORKSPACE/$DIR"
+            tflint --init
+            if [ "$UPLOAD_SARIF" = "true" ]; then
+              tflint --format=sarif --minimum-failure-severity=error > /tmp/sarif/tflint-${DIR//\//-}.sarif || true
+            else
+              tflint --minimum-failure-severity=error
+            fi
+          done
+
+      - name: Upload TFLint SARIF files
+        if: inputs.upload_sarif == true
+        run: |
+          #!/bin/bash
+          shopt -s nullglob
+          for sarif_file in /tmp/sarif/tflint-*.sarif; do
+            if [ -f "$sarif_file" ]; then
+              DIR_NAME=$(basename "$sarif_file" .sarif | sed 's/tflint-//')
+              echo "Uploading $sarif_file with category: tflint-$DIR_NAME"
+              gh codeql database upload-results --file="$sarif_file" --category="tflint-$DIR_NAME"
+            fi
+          done
+        env:
+          GH_TOKEN: ${{ github.token }}
 
   checkov-scan:
     name: Run Checkov Scan on Changed Files
