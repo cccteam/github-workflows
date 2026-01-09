@@ -153,13 +153,50 @@ jobs:
           git-push-user-email: github-actions[bot]@users.noreply.github.com
           git-push-token: ${{ steps.app-token.outputs.token }}
 
+  detect-changed-dirs:
+    name: Detect Changed Terraform Directories
+    runs-on: ubuntu-latest
+    outputs:
+      dirs: ${{ steps.detect.outputs.dirs }}
+      has_changes: ${{ steps.detect.outputs.has_changes }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed directories
+        id: detect
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -E '\.tf$|\.tfvars$' || true)
+          else
+            CHANGED_FILES=$(git diff --name-only HEAD^ HEAD | grep -E '\.tf$|\.tfvars$' || true)
+          fi
+          
+          if [ -z "$CHANGED_FILES" ]; then
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+            echo "dirs=[]" >> $GITHUB_OUTPUT
+          else
+            # Get unique directories of changed files
+            CHANGED_DIRS=$(echo "$CHANGED_FILES" | xargs -n 1 dirname | sort -u | jq -R -s -c 'split("\n") | map(select(length > 0))')
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+            echo "dirs=$CHANGED_DIRS" >> $GITHUB_OUTPUT
+            echo "Changed directories: $CHANGED_DIRS"
+          fi
+
   tflint:
     name: Run TFLint on Changed Files
     runs-on: ubuntu-latest
-    needs: terraform-docs
+    needs: [terraform-docs, detect-changed-dirs]
     permissions:
       contents: read
       security-events: write
+    if: needs.detect-changed-dirs.outputs.has_changes == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        dir: ${{ fromJson(needs.detect-changed-dirs.outputs.dirs) }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -171,65 +208,31 @@ jobs:
         with:
           tflint_version: latest
 
-      - name: Identify changed Terraform files
-        id: changed-files
+      - name: Run TFLint
         run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            git diff --name-only origin/${{ github.base_ref }}...HEAD
+          cd ${{ matrix.dir }}
+          tflint --init
+          if [ "${{ inputs.upload_sarif }}" = "true" ]; then
+            tflint --format=sarif --minimum-failure-severity=error > tflint.sarif
           else
-            git diff --name-only HEAD^ HEAD
-          fi | grep -E '\.tf$|\.tfvars$' > changed_tf_files.txt || true
-          if [ -s changed_tf_files.txt ]; then
-            echo "Terraform files changed:"
-            cat changed_tf_files.txt
-            echo "has_tf_files=true" >> $GITHUB_OUTPUT
-          else
-            echo "No Terraform files changed, skipping TFLint."
-            echo "has_tf_files=false" >> $GITHUB_OUTPUT
+            tflint --minimum-failure-severity=error
           fi
 
-      - name: Run TFLint on changed files
-        if: steps.changed-files.outputs.has_tf_files == 'true'
-        run: |
-          while IFS= read -r file; do
-            if [ -f "$file" ]; then
-              dir=$(dirname "$file")
-              echo "Running TFLint in directory: $dir"
-              cd "$dir"
-              tflint --init
-              if [ "${{ inputs.upload_sarif }}" = "true" ]; then
-                tflint --format=sarif --minimum-failure-severity=error > tflint.sarif
-              else
-                tflint --minimum-failure-severity=error
-              fi
-              cd - > /dev/null
-            else
-              echo "Skipping deleted file: $file"
-            fi
-          done < changed_tf_files.txt
-
-      - name: Merge TFLint SARIF files
-        if: steps.changed-files.outputs.has_tf_files == 'true' && inputs.upload_sarif == true
-        run: |
-          # Merge all tflint.sarif files into one with a single run
-          find . -name "tflint.sarif" -exec jq -s '{version: "2.1.0", runs: [{tool: .[0].runs[0].tool, results: [.[].runs[0].results[] // empty]}]}' {} + > tflint-results.sarif
-
       - name: Upload TFLint SARIF file
-        if: inputs.upload_sarif == true && steps.changed-files.outputs.has_tf_files == 'true' && hashFiles('tflint-results.sarif') != ''
+        if: inputs.upload_sarif == true && hashFiles(format('{0}/tflint.sarif', matrix.dir)) != ''
         uses: github/codeql-action/upload-sarif@v4
         with:
-          sarif_file: tflint-results.sarif
-          token: ${{ secrets.GITHUB_TOKEN }}
+          sarif_file: ${{ matrix.dir }}/tflint.sarif
+          category: tflint-${{ matrix.dir }}
 
   checkov-scan:
     name: Run Checkov Scan on Changed Files
     permissions:
       contents: read
       security-events: write
-
     runs-on: ubuntu-latest
-    needs: terraform-docs
-
+    needs: [terraform-docs, detect-changed-dirs]
+    if: needs.detect-changed-dirs.outputs.has_changes == 'true'
     steps:
       - uses: actions/checkout@v5
         with:
@@ -266,4 +269,4 @@ jobs:
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: results.sarif
-          token: ${{ secrets.GITHUB_TOKEN }}
+          category: checkov
