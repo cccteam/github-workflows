@@ -173,7 +173,7 @@ jobs:
           else
             CHANGED_FILES=$(git diff --name-only HEAD^ HEAD | grep -E '\.tf$|\.tfvars$' || true)
           fi
-          
+
           if [ -z "$CHANGED_FILES" ]; then
             echo "has_changes=false" >> $GITHUB_OUTPUT
             echo "dirs=[]" >> $GITHUB_OUTPUT
@@ -192,6 +192,7 @@ jobs:
     permissions:
       contents: read
       security-events: write
+      actions: read
     if: needs.detect-changed-dirs.outputs.has_changes == 'true'
     strategy:
       fail-fast: false
@@ -230,6 +231,7 @@ jobs:
     permissions:
       contents: read
       security-events: write
+      actions: read
     runs-on: ubuntu-latest
     needs: [terraform-docs, detect-changed-dirs]
     if: needs.detect-changed-dirs.outputs.has_changes == 'true'
