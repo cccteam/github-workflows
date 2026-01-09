@@ -160,13 +160,14 @@ jobs:
   terraform-ci:
     uses: cccteam/github-workflows/.github/workflows/terraform-ci.yml@v5.9.0
     with:
-      working_dirs: 'terraform'
       terraform_version: '1.9.0'
-      upload_sarif: true     # Upload security results to GitHub Security
+      upload_sarif: false    # Optional: Upload security results to GitHub Security
     secrets:
       app_id: ${{ secrets.TERRAFORM_APP_ID }}
       app_pem: ${{ secrets.TERRAFORM_APP_PEM }}
 ```
+
+**Note:** The `working_dirs` input is deprecated and no longer required. The workflow now automatically detects changed Terraform directories and scans only those files. SARIF upload is optional and defaults to false.
 
 **Note:** For most use cases, the comprehensive [`terraform-ci.yml`](#terraform-ci-example) workflow is recommended as it combines all checks efficiently.
 
