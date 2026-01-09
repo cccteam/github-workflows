@@ -211,8 +211,18 @@ jobs:
       - name: Merge TFLint SARIF files
         if: steps.changed-files.outputs.has_tf_files == 'true' && inputs.upload_sarif == true
         run: |
-          # Merge all tflint.sarif files into one
-          find . -name "tflint.sarif" -exec jq -s 'reduce .[] as $item ({"version": "2.1.0", "runs": []}; .runs += $item.runs)' {} + > tflint-results.sarif
+          # Merge all tflint.sarif files into one with a single run
+          find . -name "tflint.sarif" -exec jq -s '
+            {
+              version: "2.1.0",
+              runs: [
+                {
+                  tool: (.[] | .runs[0].tool),
+                  results: [.[] | .runs[0].results[] // empty]
+                }
+              ]
+            }
+          ' {} + > tflint-results.sarif
 
       - name: Upload TFLint SARIF file
         if: inputs.upload_sarif == true && steps.changed-files.outputs.has_tf_files == 'true' && hashFiles('tflint-results.sarif') != ''
