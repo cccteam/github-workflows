@@ -212,10 +212,10 @@ jobs:
         if: steps.changed-files.outputs.has_tf_files == 'true' && inputs.upload_sarif == true
         run: |
           # Merge all tflint.sarif files into one
-          find . -name "tflint.sarif" -exec jq -s 'reduce .[] as $item ({"version": "2.1.0", "runs": []}; .runs += $item.runs)' {} + > tflint-results.sarif || true
+          find . -name "tflint.sarif" -exec jq -s 'reduce .[] as $item ({"version": "2.1.0", "runs": []}; .runs += $item.runs)' {} + > tflint-results.sarif
 
       - name: Upload TFLint SARIF file
-        if: inputs.upload_sarif == true && (success() || failure())
+        if: inputs.upload_sarif == true && steps.changed-files.outputs.has_tf_files == 'true' && hashFiles('tflint-results.sarif') != ''
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: tflint-results.sarif
@@ -261,7 +261,7 @@ jobs:
           skip_check: ${{ inputs.skip_check }}
 
       - name: Upload SARIF file
-        if: ${{ inputs.upload_sarif == true && (success() || failure()) }}
+        if: inputs.upload_sarif == true && steps.changed-files.outputs.has_files == 'true' && hashFiles('results.sarif') != ''
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: results.sarif
