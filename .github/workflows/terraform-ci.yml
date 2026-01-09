@@ -250,7 +250,7 @@ jobs:
           wait-for-processing: true
 
   checkov-scan:
-    name: Run Checkov Security Scanning
+    name: Run Checkov Scan on Changed Files
     runs-on: ubuntu-latest
     needs: [terraform-docs, detect-changed-dirs]
     permissions:
