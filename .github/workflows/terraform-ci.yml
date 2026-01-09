@@ -10,9 +10,7 @@
 name: Terraform CI (Reusable)
 
 permissions:
-  contents: write
-  pull-requests: write
-  security-events: write
+  contents: read
 
 on:
   workflow_call:
@@ -73,6 +71,9 @@ jobs:
   terraform-docs:
     name: Format and document Terraform
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
       - name: Generate GitHub App Token
         uses: actions/create-github-app-token@v2
@@ -156,6 +157,8 @@ jobs:
   detect-changed-dirs:
     name: Detect Changed Terraform Directories
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       dirs: ${{ steps.detect.outputs.dirs }}
       has_changes: ${{ steps.detect.outputs.has_changes }}
