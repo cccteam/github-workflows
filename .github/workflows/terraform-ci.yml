@@ -235,18 +235,10 @@ jobs:
 
       - name: Upload TFLint SARIF files
         if: inputs.upload_sarif == true
-        run: |
-          #!/bin/bash
-          shopt -s nullglob
-          for sarif_file in /tmp/sarif/tflint-*.sarif; do
-            if [ -f "$sarif_file" ]; then
-              DIR_NAME=$(basename "$sarif_file" .sarif | sed 's/tflint-//')
-              echo "Uploading $sarif_file with category: tflint-$DIR_NAME"
-              gh codeql database upload-results --file="$sarif_file" --category="tflint-$DIR_NAME"
-            fi
-          done
-        env:
-          GH_TOKEN: ${{ github.token }}
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: /tmp/sarif
+          category: tflint
 
   checkov-scan:
     name: Run Checkov Scan on Changed Files
