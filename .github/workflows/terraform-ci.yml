@@ -198,7 +198,7 @@ jobs:
               cd "$dir"
               tflint --init
               if [ "${{ inputs.upload_sarif }}" = "true" ]; then
-                tflint --format=sarif --output-file="tflint.sarif" --minimum-failure-severity=error
+                tflint --format=sarif --minimum-failure-severity=error > tflint.sarif
               else
                 tflint --minimum-failure-severity=error
               fi
