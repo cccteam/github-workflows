@@ -52,7 +52,7 @@ jobs:
       module-dir: ${{ steps.set-modules.outputs.module-dir }}
       has-changes: ${{ steps.set-modules.outputs.has-changes }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - id: set-modules
@@ -80,7 +80,7 @@ jobs:
 
       - name: Check out code into the Go module directory
         if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true }}
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: Set up Go for app
         if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true }}
@@ -123,7 +123,7 @@ jobs:
 
       - name: Check out code into the Go module directory
         if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true }}
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: Set up Go for app
         if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true }}
@@ -185,7 +185,7 @@ jobs:
 
       - name: Checkout repository
         if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true }}
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: Perform Semgrep Analysis and Generate SARIF
         if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true && inputs.upload-sarif }}
@@ -201,7 +201,7 @@ jobs:
 
       - name: Upload SARIF file for GitHub Advanced Security Dashboard
         if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true && inputs.upload-sarif }}
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: ${{ matrix.module-dir }}/semgrep.sarif
           category: semgrep-${{ matrix.module-dir }}
@@ -222,7 +222,7 @@ jobs:
 
       - name: Check out code into the Go module directory
         if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true }}
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: Set up Go for app
         if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true }}
