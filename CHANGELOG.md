@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.19.1](https://github.com/cccteam/github-workflows/compare/v5.19.0...v5.19.1) (2026-01-09)
+
+
+### Bug Fixes
+
+* **workflows:** improve SARIF file upload conditions ([#129](https://github.com/cccteam/github-workflows/issues/129)) ([f493752](https://github.com/cccteam/github-workflows/commit/f493752d945f6b0b3bd7bce3884053a882733e04))
+
 ## [5.19.0](https://github.com/cccteam/github-workflows/compare/v5.18.1...v5.19.0) (2026-01-07)
 
 
