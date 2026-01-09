@@ -219,6 +219,7 @@ jobs:
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: tflint-results.sarif
+          token: ${{ secrets.GITHUB_TOKEN }}
 
   checkov-scan:
     name: Run Checkov Scan on Changed Files
@@ -265,3 +266,4 @@ jobs:
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: results.sarif
+          token: ${{ secrets.GITHUB_TOKEN }}
