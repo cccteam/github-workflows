@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.19.2](https://github.com/cccteam/github-workflows/compare/v5.19.1...v5.19.2) (2026-01-13)
+
+
+### Bug Fixes
+
+* **workflows:** enhance Terraform CI to skip jobs if no changes detected ([#131](https://github.com/cccteam/github-workflows/issues/131)) ([4700099](https://github.com/cccteam/github-workflows/commit/4700099e2457ad26d32fdfcee44a6942dfb16e4b))
+
 ## [5.19.1](https://github.com/cccteam/github-workflows/compare/v5.19.0...v5.19.1) (2026-01-09)
 
 
