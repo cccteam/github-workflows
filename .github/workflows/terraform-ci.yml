@@ -206,9 +206,9 @@ jobs:
         id: detect
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -E '\.tf$|\.tfvars$' || true)
+            CHANGED_FILES=$(git diff --name-only --diff-filter=ACMR origin/${{ github.base_ref }}...HEAD | grep -E '\.tf$|\.tfvars$' || true)
           else
-            CHANGED_FILES=$(git diff --name-only HEAD^ HEAD | grep -E '\.tf$|\.tfvars$' || true)
+            CHANGED_FILES=$(git diff --name-only --diff-filter=ACMR HEAD^ HEAD | grep -E '\.tf$|\.tfvars$' || true)
           fi
 
           if [ -z "$CHANGED_FILES" ]; then
@@ -300,9 +300,9 @@ jobs:
         id: changed-files
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            git diff --name-only origin/${{ github.base_ref }}...HEAD > changed_files.txt || true
+            git diff --name-only --diff-filter=ACMR origin/${{ github.base_ref }}...HEAD > changed_files.txt || true
           else
-            git diff --name-only HEAD^ HEAD > changed_files.txt || true
+            git diff --name-only --diff-filter=ACMR HEAD^ HEAD > changed_files.txt || true
           fi
           if [ -s changed_files.txt ]; then
             CHANGED_FILES=$(paste -sd ' ' changed_files.txt)
