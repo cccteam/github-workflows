@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.19.3](https://github.com/cccteam/github-workflows/compare/v5.19.2...v5.19.3) (2026-01-20)
+
+
+### Bug Fixes
+
+* **workflows:** refine changed files detection logic ([#133](https://github.com/cccteam/github-workflows/issues/133)) ([8960b24](https://github.com/cccteam/github-workflows/commit/8960b2402f83cb901c721ab29cbd3294113a69cb))
+
 ## [5.19.2](https://github.com/cccteam/github-workflows/compare/v5.19.1...v5.19.2) (2026-01-13)
 
 
