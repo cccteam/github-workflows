@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.20.0](https://github.com/cccteam/github-workflows/compare/v5.19.3...v5.20.0) (2026-01-21)
+
+
+### Features
+
+* **workflows:** add support for custom Dockerfile paths in build step ([#135](https://github.com/cccteam/github-workflows/issues/135)) ([2c588eb](https://github.com/cccteam/github-workflows/commit/2c588ebdcd38cb03c67f8f36a45be42c2299f4c0))
+
 ## [5.19.3](https://github.com/cccteam/github-workflows/compare/v5.19.2...v5.19.3) (2026-01-20)
 
 
