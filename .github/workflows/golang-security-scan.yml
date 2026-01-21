@@ -45,6 +45,11 @@ on:
         type: string
         default: '[]' # empty array
         description: Json-formatted array of strings to pass to the docker build command as build args. e.g. '["arg1", "arg2"]'
+      docker-build-files:
+        required: false
+        type: string
+        default: '[]' # empty array
+        description: Json-formatted array of filenames to pass to the docker build command if not using the default Dockerfile. e.g. '["admin.Dockerfile", "portal.Dockerfile"]'
       scan-latest-release:
         required: false
         description: 'Scan the latest release of the repository in addition to the default branch'
@@ -296,7 +301,24 @@ jobs:
         run: |
           repo_name=$(echo "${{ github.repository }}" | awk '{print tolower($0)}')
           echo "REPO_NAME=$repo_name" >> $GITHUB_ENV
-          docker build $BUILD_ARGS -t $repo_name:latest .
+
+          docker_files="${{ inputs.docker-build-files }}"
+          # Trim the '[]' and '"' characters from the array
+          docker_files=$(echo "$docker_files" | tr -d '[]"')
+
+          IFS=',' read -ra DOCKERFILES <<< "$docker_files"
+          for dockerfile in "${DOCKERFILES[@]}"; do
+            dockerfile=$(echo "$dockerfile" | xargs) # This will trim whitespaces
+            echo "Building image from $dockerfile"
+            if [ -n "$dockerfile" ]; then
+              docker build $BUILD_ARGS -f "$dockerfile" -t ${repo_name}:latest .
+            fi
+          done
+
+          if [ -z "${{ inputs.docker-build-files }}"]; then
+            echo "No custom dockerfiles found, assuming default Dockerfile"
+            docker build $BUILD_ARGS -t $repo_name:latest .
+          fi
 
       - name: Run Trivy vulnerability scanner (capture findings)
         id: trivy_scan
