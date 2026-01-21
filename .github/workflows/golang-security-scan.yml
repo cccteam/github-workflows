@@ -310,12 +310,10 @@ jobs:
           for dockerfile in "${DOCKERFILES[@]}"; do
             dockerfile=$(echo "$dockerfile" | xargs) # This will trim whitespaces
             echo "Building image from $dockerfile"
-            if [ -n "$dockerfile" ]; then
               docker build $BUILD_ARGS -f "$dockerfile" -t ${repo_name}:latest .
-            fi
           done
 
-          if [ -z "${{ inputs.docker-build-files }}"]; then
+          if [ -z "$docker_files" ]; then
             echo "No custom dockerfiles found, assuming default Dockerfile"
             docker build $BUILD_ARGS -t $repo_name:latest .
           fi
