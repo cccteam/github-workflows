@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.20.1](https://github.com/cccteam/github-workflows/compare/v5.20.0...v5.20.1) (2026-01-21)
+
+
+### Bug Fixes
+
+* **workflows:** correct conditions for custom Dockerfile inputs ([#137](https://github.com/cccteam/github-workflows/issues/137)) ([9710b57](https://github.com/cccteam/github-workflows/commit/9710b57f4e8bfa8cc71f4c22dc7d42fb8658c9de))
+
 ## [5.20.0](https://github.com/cccteam/github-workflows/compare/v5.19.3...v5.20.0) (2026-01-21)
 
 
