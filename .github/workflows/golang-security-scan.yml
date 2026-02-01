@@ -125,7 +125,7 @@ jobs:
     outputs:
       modules: ${{ steps.set-modules.outputs.modules }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - id: set-modules
         run: |
           modules=$(cat ${{ inputs.release-please-config-file }} 2>/dev/null | jq -csS --arg workingDir ${{ inputs.working-directory }} 'if length == 0 then [{dir: "\($workingDir)", name: ""}] else (.[0].packages // {}) | to_entries | if length == 0 then [{dir: "\($workingDir)", name: ""}] else map({dir: (if .key == "." then "\($workingDir)" else "\($workingDir)/\(.key)" end), name: (.value."package-name" // (if .key == "." then "" else .key end))}) end end')
@@ -157,7 +157,7 @@ jobs:
         run: go install golang.org/x/vuln/cmd/govulncheck@${{ inputs.govulncheck-version }}
         shell: bash
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           ref: ${{ matrix.checkout-ref }}
           fetch-tags: true
@@ -180,7 +180,7 @@ jobs:
         shell: bash
 
       - name: Save govulncheck report as artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ env.REPORT_NAME }}
           path: ${{ env.REPORT_PATH }}
@@ -201,7 +201,7 @@ jobs:
     runs-on: ${{ inputs.runs-on }}
     steps:
       - name: Download all govulncheck reports
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           pattern: govulncheck-*
           merge-multiple: true
@@ -229,14 +229,14 @@ jobs:
 
       - name: Upload merged report 1
         if: hashFiles('govulncheck-report-1.txt') != ''
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: govulncheck-1
           path: govulncheck-report-1.txt
 
       - name: Upload merged report 2
         if: hashFiles('govulncheck-report-2.txt') != ''
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: govulncheck-2
           path: govulncheck-report-2.txt
@@ -254,7 +254,7 @@ jobs:
       image: semgrep/semgrep
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
       - name: Perform Semgrep Analysis and Generate SARIF
         if: inputs.upload-sarif
         run: |
@@ -265,7 +265,7 @@ jobs:
           semgrep scan --config ${{ inputs.semgrep-config }}
       - name: Upload SARIF file for GitHub Advanced Security Dashboard
         if: inputs.upload-sarif
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: semgrep.sarif
           category: semgrep
@@ -285,7 +285,7 @@ jobs:
           echo "REPORT_NAME=trivy-${{ matrix.checkout-ref == '' && '1' || '2' }}" >> $GITHUB_ENV
           echo "REPORT_PATH=trivy-report-${{ matrix.checkout-ref == '' && '1' || '2' }}.txt" >> $GITHUB_ENV
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           ref: ${{ matrix.checkout-ref }}
           fetch-tags: true
@@ -331,7 +331,7 @@ jobs:
         continue-on-error: true
 
       - name: Save Trivy report as artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ env.REPORT_NAME }}
           path: ${{ env.REPORT_PATH }}
@@ -347,7 +347,7 @@ jobs:
     if: ${{ inputs.execute-dependabot-check }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: Prepare ignored alerts file
         run: |
@@ -390,7 +390,7 @@ jobs:
           fi
 
       - name: Upload Dependabot alerts
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: dependabot-1
           path: dependabot-report-1.txt
@@ -436,12 +436,12 @@ jobs:
             echo "should_run=false" >> $GITHUB_OUTPUT
           fi
 
-      - uses: actions/download-artifact@v6
+      - uses: actions/download-artifact@v7
         if: steps.setup.outputs.should_run == 'true'
         with:
           name: ${{ matrix.label }}-1
 
-      - uses: actions/download-artifact@v6
+      - uses: actions/download-artifact@v7
         if: steps.setup.outputs.should_run == 'true' && inputs.scan-latest-release && matrix.label != 'dependabot'
         with:
           name: ${{ matrix.label }}-2
@@ -525,7 +525,7 @@ jobs:
 
       - name: Upload issue artifact
         if: steps.setup.outputs.should_run == 'true'
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ matrix.label }}-issue
           path: ${{ matrix.label }}-issue.txt
@@ -538,21 +538,21 @@ jobs:
     steps:
       - name: Download govulncheck issue artifact
         if: needs.govulncheck.result == 'failure'
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           name: govulncheck-issue
         continue-on-error: true # Continue if the artifact is not found
 
       - name: Download trivy issue artifact
         if: inputs.execute-trivy-scan && needs.trivy.result == 'failure'
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           name: trivy-issue
         continue-on-error: true # Continue if the artifact is not found
 
       - name: Download dependabot issue artifact
         if: inputs.execute-dependabot-check && needs.dependabot.result == 'failure'
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           name: dependabot-issue
         continue-on-error: true # Continue if the artifact is not found
