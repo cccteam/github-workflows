@@ -1,9 +1,13 @@
 name: Production Schema Protection
 
 on:
-  pull_request:
-    paths:
-      - "schema/migrations/**"
+  workflow_call:
+    inputs:
+      migrations_path:
+        description: "Relative path to the migrations directory (e.g. schema/migrations)"
+        required: false
+        default: "schema/migrations"
+        type: string
 
 jobs:
   no-prod-modifications:
@@ -18,14 +22,13 @@ jobs:
       - name: Check for modifications to existing migration files
         env:
           BASE_REF: ${{ github.base_ref }}
+          MIGRATIONS_PATH: ${{ inputs.migrations_path }}
         run: |
-          # Get all changed files in schema/migrations/ that are NOT purely additions (status A).
-          # Status codes: M=modified, D=deleted, R=renamed, C=copied, T=type-changed
-          VIOLATIONS=$(git diff --name-status origin/$BASE_REF...HEAD -- schema/migrations/ \
+          VIOLATIONS=$(git diff --name-status origin/$BASE_REF...HEAD -- "$MIGRATIONS_PATH/" \
             | grep -v '^A' || true)
 
           if [ -n "$VIOLATIONS" ]; then
-            echo "❌ SCHEMA VIOLATION: Only new files are permitted in schema/migrations/."
+            echo "❌ SCHEMA VIOLATION: Only new files are permitted in $MIGRATIONS_PATH/."
             echo "   The following existing files were modified, deleted, or renamed:"
             echo ""
             echo "$VIOLATIONS" | while IFS= read -r line; do
@@ -36,4 +39,4 @@ jobs:
             exit 1
           fi
 
-          echo "✅ schema/migrations/ — no modifications to existing files detected."
+          echo "✅ $MIGRATIONS_PATH/ — no modifications to existing files detected."
