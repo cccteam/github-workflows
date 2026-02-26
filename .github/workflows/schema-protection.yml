@@ -1,4 +1,4 @@
-name: Production Schema Protection
+name: Schema Protection
 
 on:
   workflow_call:
@@ -10,8 +10,8 @@ on:
         type: string
 
 jobs:
-  no-prod-modifications:
-    name: No modifications to existing prod migrations
+  no-schema-modifications:
+    name: No modifications to existing schema migrations
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -35,7 +35,7 @@ jobs:
               echo "   $line"
             done
             echo ""
-            echo "   Prod migrations are immutable. You must create a new migration to make changes to schema."
+            echo "   Existing schema migrations are immutable. You must create a new migration to make changes to schema."
             exit 1
           fi
 
