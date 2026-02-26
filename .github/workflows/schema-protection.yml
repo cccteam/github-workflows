@@ -1,0 +1,39 @@
+name: Production Schema Protection
+
+on:
+  pull_request:
+    paths:
+      - "schema/migrations/**"
+
+jobs:
+  no-prod-modifications:
+    name: No modifications to existing prod migrations
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for modifications to existing migration files
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          # Get all changed files in schema/migrations/ that are NOT purely additions (status A).
+          # Status codes: M=modified, D=deleted, R=renamed, C=copied, T=type-changed
+          VIOLATIONS=$(git diff --name-status origin/$BASE_REF...HEAD -- schema/migrations/ \
+            | grep -v '^A' || true)
+
+          if [ -n "$VIOLATIONS" ]; then
+            echo "❌ SCHEMA VIOLATION: Only new files are permitted in schema/migrations/."
+            echo "   The following existing files were modified, deleted, or renamed:"
+            echo ""
+            echo "$VIOLATIONS" | while IFS= read -r line; do
+              echo "   $line"
+            done
+            echo ""
+            echo "   Prod migrations are immutable. You must create a new migration to make changes to schema."
+            exit 1
+          fi
+
+          echo "✅ schema/migrations/ — no modifications to existing files detected."
