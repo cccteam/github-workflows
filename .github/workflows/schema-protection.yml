@@ -1,0 +1,42 @@
+name: Schema Protection
+
+on:
+  workflow_call:
+    inputs:
+      migrations_path:
+        description: "Relative path to the migrations directory (e.g. schema/migrations)"
+        required: false
+        default: "schema/migrations"
+        type: string
+
+jobs:
+  no-schema-modifications:
+    name: No modifications to existing schema migrations
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for modifications to existing migration files
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          MIGRATIONS_PATH: ${{ inputs.migrations_path }}
+        run: |
+          VIOLATIONS=$(git diff --name-status origin/$BASE_REF...HEAD -- "$MIGRATIONS_PATH/" \
+            | grep -v '^A' || true)
+
+          if [ -n "$VIOLATIONS" ]; then
+            echo "❌ SCHEMA VIOLATION: Only new files are permitted in $MIGRATIONS_PATH/."
+            echo "   The following existing files were modified, deleted, or renamed:"
+            echo ""
+            echo "$VIOLATIONS" | while IFS= read -r line; do
+              echo "   $line"
+            done
+            echo ""
+            echo "   Existing schema migrations are immutable. You must create a new migration to make changes to schema."
+            exit 1
+          fi
+
+          echo "✅ $MIGRATIONS_PATH/ — no modifications to existing files detected."
