@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.20.2](https://github.com/cccteam/github-workflows/compare/v5.20.1...v5.20.2) (2026-03-04)
+
+
+### Dependencies
+
+* update critical github actions dependencies ([#141](https://github.com/cccteam/github-workflows/issues/141)) ([c6d7eab](https://github.com/cccteam/github-workflows/commit/c6d7eab80fc74471edfbfacc6b5a2b1269e33128))
+
 ## [5.20.1](https://github.com/cccteam/github-workflows/compare/v5.20.0...v5.20.1) (2026-01-21)
 
 
