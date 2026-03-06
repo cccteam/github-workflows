@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.21.0](https://github.com/cccteam/github-workflows/compare/v5.20.2...v5.21.0) (2026-03-06)
+
+
+### Features
+
+* update Trivy Action post-Trivy-takedown-incident ([#143](https://github.com/cccteam/github-workflows/issues/143)) ([adec471](https://github.com/cccteam/github-workflows/commit/adec471296e0ae3b2626d796084d4c3b97d3b2c0))
+
 ## [5.20.2](https://github.com/cccteam/github-workflows/compare/v5.20.1...v5.20.2) (2026-03-04)
 
 
