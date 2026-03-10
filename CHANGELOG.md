@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.22.0](https://github.com/cccteam/github-workflows/compare/v5.21.0...v5.22.0) (2026-03-10)
+
+
+### Features
+
+* **codeql:** add CodeQL analysis workflow template ([#145](https://github.com/cccteam/github-workflows/issues/145)) ([e46571d](https://github.com/cccteam/github-workflows/commit/e46571d70e80e294e5da40c2f36683c039291923))
+
 ## [5.21.0](https://github.com/cccteam/github-workflows/compare/v5.20.2...v5.21.0) (2026-03-06)
 
 
