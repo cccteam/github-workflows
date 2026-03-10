@@ -1,0 +1,77 @@
+# This workflow runs CodeQL analysis for one or more languages.
+#
+# The following jobs are included:
+#  * analyze: Runs CodeQL analysis for each language in the provided matrix
+#
+# REQUIREMENT: This workflow requires GitHub Advanced Security (GHAS) to be enabled
+# on the repository. Without a GHAS license, the security-events write permission
+# and CodeQL result upload will fail.
+# See: https://docs.github.com/en/get-started/learning-about-github/about-github-advanced-security
+#
+# NOTE: Certain inputs are required, as detailed in the "inputs" section below.
+
+name: CodeQL Workflow Template
+on:
+  workflow_call:
+    inputs:
+      languages:
+        required: true
+        type: string
+        description: "Json-formatted array of CodeQL languages to analyze. e.g. '[\"go\", \"javascript-typescript\", \"actions\"]'"
+      runner:
+        required: false
+        type: string
+        default: 'ubuntu-latest'
+        description: The GitHub Actions runner to use.
+      config-file:
+        required: false
+        type: string
+        default: './.github/codeql-config.yml'
+        description: Path to the CodeQL config file within the calling repository.
+      queries:
+        required: false
+        type: string
+        default: 'security-and-quality'
+        description: The CodeQL query suite to run.
+      autobuild:
+        required: false
+        type: boolean
+        default: true
+        description: Whether to run the Autobuild step. Set to false for repos with only interpreted or actions languages (e.g. terraform repos scanning only GitHub Actions).
+
+permissions: {}
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ${{ inputs.runner }}
+    permissions:
+      security-events: write
+      packages: read
+      actions: read
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language: ${{ fromJson(inputs.languages) }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@0d579ffd059c29b07949a3cce3983f0780820c98 # v4
+        with:
+          languages: ${{ matrix.language }}
+          config-file: ${{ inputs.config-file }}
+          queries: ${{ inputs.queries }}
+
+      - name: Autobuild
+        if: ${{ inputs.autobuild }}
+        uses: github/codeql-action/autobuild@0d579ffd059c29b07949a3cce3983f0780820c98 # v4
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@0d579ffd059c29b07949a3cce3983f0780820c98 # v4
+        with:
+          category: "/language:${{ matrix.language }}"
