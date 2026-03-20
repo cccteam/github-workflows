@@ -1,6 +1,6 @@
 # This workflow performs security scanning for Go projects.
 #  - govulncheck-action is used to check for vulnerabilities in the Go modules
-#  - trivy-action is used to check for vulnerabilities in the application's final docker image (optional)
+#  - trivy-action is used to check for vulnerabilities in the application's final docker image (optional, disabled by default)
 #  - Dependabot security alerts are checked using the GitHub API
 # GitHub issues are created for failed jobs.
 # A Slack message is sent (per user provided details) if either security check fails.
