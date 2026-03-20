@@ -22,7 +22,9 @@ on:
       execute-trivy-scan:
         required: false
         type: boolean
-        default: true
+        default: false
+        description: Execute Trivy vulnerability scanning of the Docker image
+
       execute-dependabot-check:
         required: false
         type: boolean
