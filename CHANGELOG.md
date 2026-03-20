@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.22.1](https://github.com/cccteam/github-workflows/compare/v5.22.0...v5.22.1) (2026-03-20)
+
+
+### Bug Fixes
+
+* Update trivy to v0.35.0 ([#148](https://github.com/cccteam/github-workflows/issues/148)) ([082372d](https://github.com/cccteam/github-workflows/commit/082372df038eda74d39ff77c3264f333a3326de9))
+
 ## [5.22.0](https://github.com/cccteam/github-workflows/compare/v5.21.0...v5.22.0) (2026-03-10)
 
 
