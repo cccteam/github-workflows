@@ -76,7 +76,7 @@ jobs:
       contents: write
       pull-requests: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
@@ -100,13 +100,13 @@ jobs:
 
       - name: Generate GitHub App Token
         if: steps.check-changes.outputs.has_changes == 'true'
-        uses: actions/create-github-app-token@v2
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
         id: app-token
         with:
           app-id: ${{ secrets.app_id }}
           private-key: ${{ secrets.app_pem }}
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         if: steps.check-changes.outputs.has_changes == 'true'
         with:
           ref: ${{ github.event.pull_request.head.ref }}
@@ -122,7 +122,7 @@ jobs:
 
       - name: Set up Terraform
         if: steps.check-changes.outputs.has_changes == 'true'
-        uses: hashicorp/setup-terraform@v4.0.0
+        uses: hashicorp/setup-terraform@5e8dbf3c6d9deaf4193ca7a8fb23f2ac83bb6c85 # v4.0.0
         with:
           terraform_version: ${{ inputs.terraform_version }}
 
@@ -178,7 +178,7 @@ jobs:
 
       - name: Render Terraform docs and push changes
         if: steps.check-changes.outputs.has_changes == 'true' && steps.changed-files.outputs.changed == 'true'
-        uses: terraform-docs/gh-actions@v1.4.1
+        uses: terraform-docs/gh-actions@6de6da0cefcc6b4b7a5cbea4d79d97060733093c # v1.4.1
         with:
           working-dir: ${{ steps.changed-files.outputs.dirs }}
           output-file: ${{ inputs.output_file }}
@@ -198,7 +198,7 @@ jobs:
       has_changes: ${{ steps.detect.outputs.has_changes }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
 
@@ -239,13 +239,13 @@ jobs:
 
       - name: Checkout code
         if: needs.detect-changed-dirs.outputs.has_changes == 'true'
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
 
       - name: Set up TFLint
         if: needs.detect-changed-dirs.outputs.has_changes == 'true'
-        uses: terraform-linters/setup-tflint@v6.2.1
+        uses: terraform-linters/setup-tflint@b480b8fcdaa6f2c577f8e4fa799e89e756bb7c93 # v6.2.2
         with:
           tflint_version: latest
 
@@ -277,7 +277,7 @@ jobs:
 
       - name: Upload TFLint SARIF file
         if: needs.detect-changed-dirs.outputs.has_changes == 'true' && inputs.upload_sarif == true && hashFiles('/tmp/sarif/tflint-*.sarif') != ''
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@38697555549f1db7851b81482ff19f1fa5c4fedc # v4.34.1
         with:
           sarif_file: /tmp/sarif/tflint-*.sarif
           category: tflint
@@ -292,7 +292,7 @@ jobs:
       security-events: write
       actions: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
 
@@ -314,7 +314,7 @@ jobs:
 
       - name: Checkov GitHub Action
         if: steps.changed-files.outputs.has_files == 'true'
-        uses: bridgecrewio/checkov-action@v12
+        uses: bridgecrewio/checkov-action@99bb2caf247dfd9f03cf984373bc6043d4e32ebf # v12.1347.0
         with:
           file: ${{ steps.changed-files.outputs.files }}
           output_format: ${{ inputs.output_format }}
@@ -324,7 +324,7 @@ jobs:
 
       - name: Upload SARIF file
         if: inputs.upload_sarif == true && steps.changed-files.outputs.has_files == 'true' && hashFiles('results.sarif') != ''
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@38697555549f1db7851b81482ff19f1fa5c4fedc # v4.34.1
         with:
           sarif_file: results.sarif
           category: checkov

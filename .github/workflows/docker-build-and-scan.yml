@@ -1,7 +1,7 @@
 # This reusable workflow can be used in repositories that include a Dockerfile to perform the following actions:
 #  - Lint the Docker file via 'hadolint'.
 #  - Build the Docker image.
-#  - Scan the Docker image for vulnerabilities via the 'Trivy' scanner.
+#  - Optionally scan the Docker image for vulnerabilities via the 'Trivy' scanner (disabled by default).
 #
 # Note: Refer to the "inputs" section below to customize the behavior of the workflow.
 
@@ -19,6 +19,11 @@ on:
         type: string
         default: "[]" # empty array
         description: Json-formatted array of strings to pass to the docker build command as build args. e.g. '["arg1", "arg2"]'
+      execute-trivy-scan:
+        required: false
+        type: boolean
+        default: false
+        description: Execute Trivy vulnerability scanning of the Docker image
       vuln-types:
         required: false
         type: string
@@ -45,10 +50,10 @@ jobs:
     runs-on: ${{ inputs.runs-on }}
     steps:
       - name: Check out code repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Lint docker file
-        uses: hadolint/hadolint-action@v3.3.0
+        uses: hadolint/hadolint-action@2332a7b74a6de0dda2e2221d575162eba76ba5e5 # v3.3.0
         with:
           dockerfile: "${{ inputs.dockerfile }}"
 
@@ -67,7 +72,8 @@ jobs:
           docker build $BUILD_ARGS -t $repo_name:latest -f ${{ inputs.dockerfile }} .
 
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@v0.35.0
+        if: ${{ inputs.execute-trivy-scan }}
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
         with:
           image-ref: "${{ env.REPO_NAME }}:latest"
           format: "table"
