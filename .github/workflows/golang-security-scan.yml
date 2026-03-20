@@ -103,7 +103,7 @@ jobs:
       - name: Get latest release
         if: ${{ inputs.scan-latest-release }}
         id: get_latest_release
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         with:
           script: |
             const latestRelease = await github.rest.repos.getLatestRelease({
@@ -127,7 +127,7 @@ jobs:
     outputs:
       modules: ${{ steps.set-modules.outputs.modules }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - id: set-modules
         run: |
           modules=$(cat ${{ inputs.release-please-config-file }} 2>/dev/null | jq -csS --arg workingDir ${{ inputs.working-directory }} 'if length == 0 then [{dir: "\($workingDir)", name: ""}] else (.[0].packages // {}) | to_entries | if length == 0 then [{dir: "\($workingDir)", name: ""}] else map({dir: (if .key == "." then "\($workingDir)" else "\($workingDir)/\(.key)" end), name: (.value."package-name" // (if .key == "." then "" else .key end))}) end end')
@@ -150,7 +150,7 @@ jobs:
           echo "REPORT_PATH=govulncheck-report-${{ matrix.checkout-ref == '' && '1' || '2' }}-$SAFE_MODULE_NAME.txt" >> $GITHUB_ENV
 
       - name: Set up Go for govulncheck
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
           go-version: 'stable'
           cache: false
@@ -159,13 +159,13 @@ jobs:
         run: go install golang.org/x/vuln/cmd/govulncheck@${{ inputs.govulncheck-version }}
         shell: bash
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: ${{ matrix.checkout-ref }}
           fetch-tags: true
 
       - name: Set up Go for app
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
           go-version-file: ${{ matrix.module.dir }}/go.mod
           cache: false
@@ -182,7 +182,7 @@ jobs:
         shell: bash
 
       - name: Save govulncheck report as artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: ${{ env.REPORT_NAME }}
           path: ${{ env.REPORT_PATH }}
@@ -203,7 +203,7 @@ jobs:
     runs-on: ${{ inputs.runs-on }}
     steps:
       - name: Download all govulncheck reports
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: govulncheck-*
           merge-multiple: true
@@ -231,14 +231,14 @@ jobs:
 
       - name: Upload merged report 1
         if: hashFiles('govulncheck-report-1.txt') != ''
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: govulncheck-1
           path: govulncheck-report-1.txt
 
       - name: Upload merged report 2
         if: hashFiles('govulncheck-report-2.txt') != ''
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: govulncheck-2
           path: govulncheck-report-2.txt
@@ -256,7 +256,7 @@ jobs:
       image: semgrep/semgrep
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - name: Perform Semgrep Analysis and Generate SARIF
         if: inputs.upload-sarif
         run: |
@@ -267,7 +267,7 @@ jobs:
           semgrep scan --config ${{ inputs.semgrep-config }}
       - name: Upload SARIF file for GitHub Advanced Security Dashboard
         if: inputs.upload-sarif
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@38697555549f1db7851b81482ff19f1fa5c4fedc # v4.34.1
         with:
           sarif_file: semgrep.sarif
           category: semgrep
@@ -287,7 +287,7 @@ jobs:
           echo "REPORT_NAME=trivy-${{ matrix.checkout-ref == '' && '1' || '2' }}" >> $GITHUB_ENV
           echo "REPORT_PATH=trivy-report-${{ matrix.checkout-ref == '' && '1' || '2' }}.txt" >> $GITHUB_ENV
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: ${{ matrix.checkout-ref }}
           fetch-tags: true
@@ -322,7 +322,7 @@ jobs:
 
       - name: Run Trivy vulnerability scanner (capture findings)
         id: trivy_scan
-        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
         with:
           image-ref: '${{ env.REPO_NAME }}:latest'
           format: 'table'
@@ -333,7 +333,7 @@ jobs:
         continue-on-error: true
 
       - name: Save Trivy report as artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: ${{ env.REPORT_NAME }}
           path: ${{ env.REPORT_PATH }}
@@ -349,7 +349,7 @@ jobs:
     if: ${{ inputs.execute-dependabot-check }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Prepare ignored alerts file
         run: |
@@ -392,7 +392,7 @@ jobs:
           fi
 
       - name: Upload Dependabot alerts
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: dependabot-1
           path: dependabot-report-1.txt
@@ -438,12 +438,12 @@ jobs:
             echo "should_run=false" >> $GITHUB_OUTPUT
           fi
 
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         if: steps.setup.outputs.should_run == 'true'
         with:
           name: ${{ matrix.label }}-1
 
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         if: steps.setup.outputs.should_run == 'true' && inputs.scan-latest-release && matrix.label != 'dependabot'
         with:
           name: ${{ matrix.label }}-2
@@ -462,7 +462,7 @@ jobs:
       - name: Search for existing issue
         if: steps.setup.outputs.should_run == 'true'
         id: search_issue
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         with:
           github-token: ${{secrets.GITHUB_TOKEN}}
           script: |
@@ -498,7 +498,7 @@ jobs:
       - name: Update or Create Issue
         if: steps.setup.outputs.should_run == 'true'
         id: create_issue
-        uses: peter-evans/create-issue-from-file@v6
+        uses: peter-evans/create-issue-from-file@fca9117c27cdc29c6c4db3b86c48e4115a786710 # v6.0.0
         with:
           title: ${{ steps.search_issue.outputs.issue_title }}
           content-filepath: ./formatted-results.md
@@ -508,7 +508,7 @@ jobs:
       - name: Get issue URL
         if: steps.setup.outputs.should_run == 'true'
         id: get_issue_url
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         with:
           github-token: ${{secrets.GITHUB_TOKEN}}
           script: |
@@ -527,7 +527,7 @@ jobs:
 
       - name: Upload issue artifact
         if: steps.setup.outputs.should_run == 'true'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: ${{ matrix.label }}-issue
           path: ${{ matrix.label }}-issue.txt
@@ -540,21 +540,21 @@ jobs:
     steps:
       - name: Download govulncheck issue artifact
         if: needs.govulncheck.result == 'failure'
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: govulncheck-issue
         continue-on-error: true # Continue if the artifact is not found
 
       - name: Download trivy issue artifact
         if: inputs.execute-trivy-scan && needs.trivy.result == 'failure'
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: trivy-issue
         continue-on-error: true # Continue if the artifact is not found
 
       - name: Download dependabot issue artifact
         if: inputs.execute-dependabot-check && needs.dependabot.result == 'failure'
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: dependabot-issue
         continue-on-error: true # Continue if the artifact is not found
@@ -579,7 +579,7 @@ jobs:
           echo "$MESSAGE" >> $GITHUB_ENV
           echo 'EOF' >> $GITHUB_ENV
 
-      - uses: slackapi/slack-github-action@v2.1.1
+      - uses: slackapi/slack-github-action@91efab103c0de0a537f72a35f6b8cda0ee76bf0a # v2.1.1
         with:
           method: chat.postMessage
           token: ${{ secrets.SLACK_BOT_TOKEN }}
