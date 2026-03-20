@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.22.2](https://github.com/cccteam/github-workflows/compare/v5.22.1...v5.22.2) (2026-03-20)
+
+
+### Bug Fixes
+
+* Make trivy execution optional and pin all actions to commit SHAs ([#150](https://github.com/cccteam/github-workflows/issues/150)) ([d7fbae6](https://github.com/cccteam/github-workflows/commit/d7fbae674127b7aedbb8a38488858fc0bfc44dd4))
+
 ## [5.22.1](https://github.com/cccteam/github-workflows/compare/v5.22.0...v5.22.1) (2026-03-20)
 
 
