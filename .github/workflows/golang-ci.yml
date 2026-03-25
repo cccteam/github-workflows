@@ -45,9 +45,13 @@ on:
         type: string
         default: 'ubuntu-latest'
 
+permissions: {}
+
 jobs:
   detect-modules:
     runs-on: ${{ inputs.runs-on }}
+    permissions:
+      contents: read
     outputs:
       module-dir: ${{ steps.set-modules.outputs.module-dir }}
       has-changes: ${{ steps.set-modules.outputs.has-changes }}
@@ -69,6 +73,8 @@ jobs:
     name: Check for go generate changes
     needs: detect-modules
     runs-on: ${{ inputs.runs-on }}
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -111,6 +117,8 @@ jobs:
     name: Run tests and builds
     needs: detect-modules
     runs-on: ${{ inputs.runs-on }}
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -146,6 +154,8 @@ jobs:
     name: Go Vulnerability Check
     needs: detect-modules
     runs-on: ${{ inputs.runs-on }}
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -210,6 +220,8 @@ jobs:
     name: Run golangci-lint
     needs: detect-modules
     runs-on: ${{ inputs.runs-on }}
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
