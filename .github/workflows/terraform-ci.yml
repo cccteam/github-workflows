@@ -9,8 +9,7 @@
 
 name: Terraform CI (Reusable)
 
-permissions:
-  contents: read
+permissions: {}
 
 on:
   workflow_call:
