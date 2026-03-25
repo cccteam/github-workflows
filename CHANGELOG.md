@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.23.1](https://github.com/cccteam/github-workflows/compare/v5.23.0...v5.23.1) (2026-03-25)
+
+
+### Bug Fixes
+
+* **grype:** correct SARIF upload reference and improve SBOM process ([#154](https://github.com/cccteam/github-workflows/issues/154)) ([22b06c7](https://github.com/cccteam/github-workflows/commit/22b06c73cfb3dccc190b53d4fc284d9bfa201623))
+
 ## [5.23.0](https://github.com/cccteam/github-workflows/compare/v5.22.2...v5.23.0) (2026-03-25)
 
 
