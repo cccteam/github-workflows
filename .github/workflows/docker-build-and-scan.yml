@@ -2,22 +2,26 @@
 #  - Lint the Docker file via 'hadolint'.
 #  - Build the Docker image.
 #  - Optionally scan the Docker image for vulnerabilities via the 'Trivy' scanner (disabled by default).
+#  - Optionally scan the Docker image for vulnerabilities via the 'Grype' scanner (disabled by default).
+#  - Optionally upload Grype scan results as a SARIF report to GitHub Advanced Security (disabled by default).
+#  - Optionally generate a Software Bill of Materials (SBOM) via 'Syft' (disabled by default).
 #
 # Note: Refer to the "inputs" section below to customize the behavior of the workflow.
 
 name: Build & Scan Docker Image
+
 on:
   workflow_call:
     inputs:
       dockerfile:
         required: false
         type: string
-        default: "Dockerfile"
-        description: "Path to the relevant Dockerfile"
+        default: 'Dockerfile'
+        description: 'Path to the relevant Dockerfile'
       docker-build-args:
         required: false
         type: string
-        default: "[]" # empty array
+        default: '[]' # empty array
         description: Json-formatted array of strings to pass to the docker build command as build args. e.g. '["arg1", "arg2"]'
       execute-trivy-scan:
         required: false
@@ -27,7 +31,7 @@ on:
       vuln-types:
         required: false
         type: string
-        default: "os,library"
+        default: 'os,library'
         description: Comma-separated list of vulnerability types to scan for. e.g. 'os,library'
       ignore-unfixed:
         required: false
@@ -37,17 +41,48 @@ on:
       severity:
         required: false
         type: string
-        default: "LOW,MEDIUM,HIGH,CRITICAL"
+        default: 'LOW,MEDIUM,HIGH,CRITICAL'
         description: Comma-separated list of vulnerability severities to scan for. e.g. 'LOW,MEDIUM,HIGH,CRITICAL'
+      execute-grype-scan:
+        required: false
+        type: boolean
+        default: false
+        description: Execute Grype vulnerability scanning of the Docker image
+      grype-fail-on-severity:
+        required: false
+        type: string
+        default: 'high'
+        description: Minimum vulnerability severity that causes Grype to fail the build (negligible, low, medium, high, critical)
+      upload-sarif:
+        required: false
+        type: boolean
+        default: false
+        description: Upload Grype scan results as a SARIF report to the GitHub Advanced Security Dashboard. When enabled, the build will not fail on severity - findings are surfaced via GitHub Security instead.
+      generate-sbom:
+        required: false
+        type: boolean
+        default: false
+        description: Generate a Software Bill of Materials (SBOM) using Syft after building the Docker image
+      sbom-format:
+        required: false
+        type: string
+        default: 'cyclonedx-json'
+        description: Format for the generated SBOM (cyclonedx-json, spdx-json, syft-json)
       runs-on:
         required: false
         type: string
-        default: "ubuntu-latest"
+        default: 'ubuntu-latest'
+
+permissions: {}
 
 jobs:
   docker:
     name: Build & Scan Docker Image
     runs-on: ${{ inputs.runs-on }}
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
     steps:
       - name: Check out code repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -55,7 +90,7 @@ jobs:
       - name: Lint docker file
         uses: hadolint/hadolint-action@2332a7b74a6de0dda2e2221d575162eba76ba5e5 # v3.3.0
         with:
-          dockerfile: "${{ inputs.dockerfile }}"
+          dockerfile: '${{ inputs.dockerfile }}'
 
       - name: Prepare docker build args
         id: prepare-build-args
@@ -75,9 +110,42 @@ jobs:
         if: ${{ inputs.execute-trivy-scan }}
         uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
         with:
-          image-ref: "${{ env.REPO_NAME }}:latest"
-          format: "table"
-          exit-code: "1"
-          ignore-unfixed: "${{ inputs.ignore-unfixed }}"
-          vuln-type: "${{ inputs.vuln-types }}"
-          severity: "${{ inputs.severity }}"
+          image-ref: '${{ env.REPO_NAME }}:latest'
+          format: 'table'
+          exit-code: '1'
+          ignore-unfixed: '${{ inputs.ignore-unfixed }}'
+          vuln-type: '${{ inputs.vuln-types }}'
+          severity: '${{ inputs.severity }}'
+
+      - name: Run Grype vulnerability scanner
+        if: ${{ inputs.execute-grype-scan && !inputs.upload-sarif }}
+        uses: anchore/scan-action@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2 # v7.4.0
+        with:
+          image: '${{ env.REPO_NAME }}:latest'
+          fail-build: 'true'
+          severity-cutoff: '${{ inputs.grype-fail-on-severity }}'
+          output-format: 'table'
+
+      - name: Run Grype vulnerability scanner and generate SARIF
+        if: ${{ inputs.execute-grype-scan && inputs.upload-sarif }}
+        uses: anchore/scan-action@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2 # v7.4.0
+        with:
+          image: '${{ env.REPO_NAME }}:latest'
+          fail-build: 'false'
+          severity-cutoff: '${{ inputs.grype-fail-on-severity }}'
+          output-format: 'sarif'
+
+      - name: Upload Grype SARIF report to GitHub Advanced Security Dashboard
+        if: ${{ inputs.execute-grype-scan && inputs.upload-sarif }}
+        uses: github/codeql-action/upload-sarif@38697555549f1db7851b81482ff19f1fa5c4fedc # v4.34.1
+        with:
+          sarif_file: results.sarif
+          category: grype
+
+      - name: Generate SBOM using Syft
+        if: ${{ inputs.generate-sbom }}
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          image: '${{ env.REPO_NAME }}:latest'
+          format: '${{ inputs.sbom-format }}'
+          artifact-name: 'sbom.${{ inputs.sbom-format }}'
