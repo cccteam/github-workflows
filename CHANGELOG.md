@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.23.0](https://github.com/cccteam/github-workflows/compare/v5.22.2...v5.23.0) (2026-03-25)
+
+
+### Features
+
+* enhance CI workflows and permissions management ([#152](https://github.com/cccteam/github-workflows/issues/152)) ([261d538](https://github.com/cccteam/github-workflows/commit/261d53890ec0809716102e5ce73c7d81256b3800))
+
 ## [5.22.2](https://github.com/cccteam/github-workflows/compare/v5.22.1...v5.22.2) (2026-03-20)
 
 
