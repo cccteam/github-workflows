@@ -158,7 +158,7 @@ jobs:
           sarif_file: ${{ steps.grype-sarif.outputs.sarif }}
           category: grype
 
-      - name: Generate SBOM using Syft
+      - name: Generate SBOM
         id: sbom
         if: ${{ inputs.generate-sbom }}
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
