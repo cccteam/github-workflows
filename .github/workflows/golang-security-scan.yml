@@ -7,6 +7,7 @@
 #
 # NOTE: This workflow has required inputs. Refer to the 'inputs' & 'secrets' sections below.
 name: Golang Security Scan Template
+
 on:
   workflow_call:
     inputs:
@@ -93,10 +94,14 @@ on:
         required: true
         description: Token for checking Dependabot security alerts
 
+permissions: {}
+
 jobs:
   env-setup:
     name: Environment Setup
     runs-on: ${{ inputs.runs-on }}
+    permissions:
+      contents: read
     outputs:
       checkout-refs: '[${{ steps.set_checkout_refs.outputs.checkout_refs }}]'
     steps:
@@ -124,6 +129,8 @@ jobs:
   detect-modules:
     name: Detect Modules
     runs-on: ${{ inputs.runs-on }}
+    permissions:
+      contents: read
     outputs:
       modules: ${{ steps.set-modules.outputs.modules }}
     steps:
@@ -137,6 +144,8 @@ jobs:
     needs: [env-setup, detect-modules]
     name: Go Vulnerability Check
     runs-on: ${{ inputs.runs-on }}
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -277,6 +286,8 @@ jobs:
     name: Trivy Scan
     runs-on: ${{ inputs.runs-on }}
     if: ${{ inputs.execute-trivy-scan }}
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -347,6 +358,8 @@ jobs:
   dependabot:
     runs-on: ${{ inputs.runs-on }}
     if: ${{ inputs.execute-dependabot-check }}
+    permissions:
+      contents: read
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -406,6 +419,8 @@ jobs:
   create_issues:
     name: Create issues for failed jobs
     runs-on: ${{ inputs.runs-on }}
+    permissions:
+      issues: write
     strategy:
       fail-fast: false
       matrix:
