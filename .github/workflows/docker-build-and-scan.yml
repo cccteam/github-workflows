@@ -68,6 +68,21 @@ on:
         type: string
         default: 'cyclonedx-json'
         description: Format for the generated SBOM (cyclonedx-json, spdx-json, syft-json)
+      gcp-sbom-bucket:
+        required: false
+        type: string
+        default: ''
+        description: GCS bucket to upload the SBOM to. When set, the SBOM will be uploaded to gs://<gcp-sbom-bucket>/<github.repository>/<github.sha>/sbom-<dockerfile>.<sbom-format>. Requires gcp-workload-identity-provider and gcp-service-account to be set.
+      gcp-workload-identity-provider:
+        required: false
+        type: string
+        default: ''
+        description: The workload identity provider to use for GCP authentication when uploading the SBOM to GCS.
+      gcp-service-account:
+        required: false
+        type: string
+        default: ''
+        description: The service account to use for GCP authentication when uploading the SBOM to GCS.
       runs-on:
         required: false
         type: string
@@ -144,9 +159,25 @@ jobs:
           category: grype
 
       - name: Generate SBOM using Syft
+        id: sbom
         if: ${{ inputs.generate-sbom }}
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
         with:
           image: '${{ env.REPO_NAME }}:latest'
           format: '${{ inputs.sbom-format }}'
-          artifact-name: 'sbom.${{ inputs.sbom-format }}'
+          artifact-name: 'sbom-${{ inputs.dockerfile }}.${{ inputs.sbom-format }}'
+          upload-artifact: true
+
+      - name: Authenticate to GCP
+        if: ${{ inputs.generate-sbom && inputs.gcp-sbom-bucket != '' }}
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: '${{ inputs.gcp-workload-identity-provider }}'
+          service_account: '${{ inputs.gcp-service-account }}'
+
+      - name: Upload SBOM to GCS
+        if: ${{ inputs.generate-sbom && inputs.gcp-sbom-bucket != '' }}
+        uses: google-github-actions/upload-cloud-storage@6397bd7208e18d13ba2619ee21b9873edc94427a # v3.0.0
+        with:
+          path: '${{ steps.sbom.outputs.sbom }}'
+          destination: '${{ inputs.gcp-sbom-bucket }}/${{ github.repository }}/${{ github.sha }}'
