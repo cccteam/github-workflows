@@ -11,6 +11,7 @@
 # NOTE: Certain inputs are required, as detailed in the "inputs" section below.
 
 name: CodeQL Workflow Template
+
 on:
   workflow_call:
     inputs:
