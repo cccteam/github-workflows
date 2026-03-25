@@ -113,6 +113,8 @@ jobs:
           build_args='${{ inputs.docker-build-args }}'
           build_args=$(echo $build_args | jq -r '.[] | "--build-arg " + .' | xargs)
           echo "BUILD_ARGS=$build_args" >> $GITHUB_ENV
+          dockerfile_safe=$(echo '${{ inputs.dockerfile }}' | sed 's/[^a-zA-Z0-9._-]/-/g')
+          echo "SBOM_ARTIFACT_NAME=sbom-${dockerfile_safe}" >> $GITHUB_ENV
 
       - name: Build docker image
         id: build
@@ -165,7 +167,7 @@ jobs:
         with:
           image: '${{ env.REPO_NAME }}:latest'
           format: '${{ inputs.sbom-format }}'
-          artifact-name: 'sbom-${{ inputs.dockerfile }}.${{ inputs.sbom-format }}'
+          artifact-name: '${{ env.SBOM_ARTIFACT_NAME }}'
           upload-artifact: true
 
       - name: Authenticate to GCP
