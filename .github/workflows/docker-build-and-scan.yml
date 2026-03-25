@@ -68,6 +68,21 @@ on:
         type: string
         default: 'cyclonedx-json'
         description: Format for the generated SBOM (cyclonedx-json, spdx-json, syft-json)
+      gcp-sbom-bucket:
+        required: false
+        type: string
+        default: ''
+        description: GCS bucket to upload the SBOM to. When set, the SBOM will be uploaded to gs://<gcp-sbom-bucket>/<github.repository>/<github.sha>/sbom-<dockerfile>.<sbom-format>. Requires gcp-workload-identity-provider and gcp-service-account to be set.
+      gcp-workload-identity-provider:
+        required: false
+        type: string
+        default: ''
+        description: The workload identity provider to use for GCP authentication when uploading the SBOM to GCS.
+      gcp-service-account:
+        required: false
+        type: string
+        default: ''
+        description: The service account to use for GCP authentication when uploading the SBOM to GCS.
       runs-on:
         required: false
         type: string
@@ -127,6 +142,7 @@ jobs:
           output-format: 'table'
 
       - name: Run Grype vulnerability scanner and generate SARIF
+        id: grype-sarif
         if: ${{ inputs.execute-grype-scan && inputs.upload-sarif }}
         uses: anchore/scan-action@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2 # v7.4.0
         with:
@@ -139,13 +155,29 @@ jobs:
         if: ${{ inputs.execute-grype-scan && inputs.upload-sarif }}
         uses: github/codeql-action/upload-sarif@38697555549f1db7851b81482ff19f1fa5c4fedc # v4.34.1
         with:
-          sarif_file: results.sarif
+          sarif_file: ${{ steps.grype-sarif.outputs.sarif }}
           category: grype
 
-      - name: Generate SBOM using Syft
+      - name: Generate SBOM
+        id: sbom
         if: ${{ inputs.generate-sbom }}
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
         with:
           image: '${{ env.REPO_NAME }}:latest'
           format: '${{ inputs.sbom-format }}'
-          artifact-name: 'sbom.${{ inputs.sbom-format }}'
+          artifact-name: 'sbom-${{ inputs.dockerfile }}.${{ inputs.sbom-format }}'
+          upload-artifact: true
+
+      - name: Authenticate to GCP
+        if: ${{ inputs.generate-sbom && inputs.gcp-sbom-bucket != '' }}
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: '${{ inputs.gcp-workload-identity-provider }}'
+          service_account: '${{ inputs.gcp-service-account }}'
+
+      - name: Upload SBOM to GCS
+        if: ${{ inputs.generate-sbom && inputs.gcp-sbom-bucket != '' }}
+        uses: google-github-actions/upload-cloud-storage@6397bd7208e18d13ba2619ee21b9873edc94427a # v3.0.0
+        with:
+          path: '${{ steps.sbom.outputs.sbom }}'
+          destination: '${{ inputs.gcp-sbom-bucket }}/${{ github.repository }}/${{ github.sha }}'
