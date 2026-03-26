@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.23.2](https://github.com/cccteam/github-workflows/compare/v5.23.1...v5.23.2) (2026-03-26)
+
+
+### Bug Fixes
+
+* prevent SBOM artifact name collision for same-named Dockerfiles ([#156](https://github.com/cccteam/github-workflows/issues/156)) ([e07c944](https://github.com/cccteam/github-workflows/commit/e07c944db92734f376e1c0b447e680c0f5eea0a9))
+
 ## [5.23.1](https://github.com/cccteam/github-workflows/compare/v5.23.0...v5.23.1) (2026-03-25)
 
 
