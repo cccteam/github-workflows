@@ -168,7 +168,8 @@ jobs:
       - name: govulncheck ${{ matrix.module-dir }}
         if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true }}
         # NOTE: Repo checkout and go setup are handled within 'govulncheck-action'
-        uses: golang/govulncheck-action@b625fbe08f3bccbe446d94fbf87fcc875a4f50ee # v1.0.4
+        # Pinned to master commit because a release has not been cut with the SHA-pinned dependencies fix
+        uses: golang/govulncheck-action@31f7c5463448f83528bd771c2d978d940080c9fd # master 2026-02-28
         with:
           go-version-file: ${{ matrix.module-dir }}/go.mod
           go-package: ./...
