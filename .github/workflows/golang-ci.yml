@@ -90,7 +90,7 @@ jobs:
 
       - name: Set up Go for app
         if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true }}
-        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
           go-version-file: ${{ matrix.module-dir }}/go.mod
           cache-dependency-path: ${{ matrix.module-dir }}/go.sum
@@ -135,7 +135,7 @@ jobs:
 
       - name: Set up Go for app
         if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true }}
-        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
           go-version-file: ${{ matrix.module-dir }}/go.mod
           cache-dependency-path: ${{ matrix.module-dir }}/go.sum
@@ -212,7 +212,7 @@ jobs:
 
       - name: Upload SARIF file for GitHub Advanced Security Dashboard
         if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true && inputs.upload-sarif }}
-        uses: github/codeql-action/upload-sarif@38697555549f1db7851b81482ff19f1fa5c4fedc # v4.34.1
+        uses: github/codeql-action/upload-sarif@c10b8064de6f491fea524254123dbe5e09572f13 # v4.35.1
         with:
           sarif_file: ${{ matrix.module-dir }}/semgrep.sarif
           category: semgrep-${{ matrix.module-dir }}
@@ -239,7 +239,7 @@ jobs:
 
       - name: Set up Go for app
         if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true }}
-        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
           go-version-file: ${{ matrix.module-dir }}/go.mod
           cache-dependency-path: ${{ matrix.module-dir }}/go.sum
