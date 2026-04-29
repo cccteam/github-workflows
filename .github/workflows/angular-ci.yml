@@ -11,7 +11,7 @@ on:
         description: "Bun version to use"
         required: false
         type: string
-        default: "latest"
+        default: "1.3.13"
       working-directory:
         description: "Directory containing Angular projects"
         required: false
