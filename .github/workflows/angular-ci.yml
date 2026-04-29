@@ -7,18 +7,18 @@ on:
         required: false
         type: string
         default: "ubuntu-latest"
-      node-version:
-        description: "Node.js version to use"
+      bun-version:
+        description: "Bun version to use"
         required: false
         type: string
-        default: "24"
+        default: "latest"
       working-directory:
         description: "Directory containing Angular projects"
         required: false
         type: string
         default: "./gui"
       commands:
-        description: 'List of npm commands to run. These come from the "scripts" section in your project''s package.json.'
+        description: 'List of bun commands to run. These come from the "scripts" section in your project''s package.json.'
         required: false
         type: string
         default: '["build", "lint"]'
@@ -49,14 +49,14 @@ jobs:
             echo "No angular.json found"
           fi
 
-      - name: Install Node.js
-        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+      - name: Install Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          node-version: ${{ inputs.node-version }}
+          bun-version: ${{ inputs.bun-version }}
 
       - name: Install dependencies
         working-directory: ${{ inputs.working-directory }}
-        run: npm ci
+        run: bun install
 
       - name: Run commands for each project
         working-directory: ${{ inputs.working-directory }}
@@ -69,7 +69,7 @@ jobs:
           for project in $(echo $projects | jq -r '.[]'); do
             for command in $(echo $commands | jq -r '.[]'); do
               echo "::group::Running $command for $project"
-              npm run $command $project || npm run $command
+              bun run $command $project || bun run $command
               echo "::endgroup::"
             done
           done
