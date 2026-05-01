@@ -8,7 +8,7 @@ This repository provides a collection of reusable GitHub Actions workflow templa
 
 - **Angular CI**
   [`angular-ci.yml`](.github/workflows/angular-ci.yml):
-  Runs configurable npm scripts for all Angular projects defined in angular.json. Supports any npm script names defined in package.json with defaults of build and lint.
+  Runs configurable bun scripts for all Angular projects defined in angular.json. Supports any bun script names defined in package.json with defaults of build and lint.
 
 ### Go Workflows
 
@@ -89,27 +89,27 @@ jobs:
   angular-check:
     uses: cccteam/github-workflows/.github/workflows/angular-ci.yml@v5.9.0
     with:
-      node-version: '20'
+      bun-version: '1.3.13'
       working-directory: './frontend'
 
-  # Run custom npm scripts
+  # Run custom bun scripts
   angular-full-check:
     uses: cccteam/github-workflows/.github/workflows/angular-ci.yml@v5.9.0
     with:
-      node-version: '20'
+      bun-version: '1.3.13'
       working-directory: './frontend'
-      checks: '["build", "lint", "test", "audit", "format:check"]'
+      commands: '["build", "lint", "test", "audit", "format:check"]'
 
   # Run only specific checks
   angular-build-only:
     uses: cccteam/github-workflows/.github/workflows/angular-ci.yml@v5.9.0
     with:
-      checks: '["build"]'
+      commands: '["build"]'
 ```
 
-#### Common Angular npm Scripts
+#### Common Angular Bun Scripts
 
-The Angular CI workflow can run any npm script defined in your `package.json`. Common examples include:
+The Angular CI workflow can run any bun script defined in your `package.json`. Common examples include:
 
 - `build` - Build the application
 - `lint` - Run ESLint
