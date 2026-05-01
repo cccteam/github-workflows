@@ -1,5 +1,16 @@
 # Changelog
 
+## [6.0.0](https://github.com/cccteam/github-workflows/compare/v5.24.0...v6.0.0) (2026-05-01)
+
+
+### ⚠ BREAKING CHANGES
+
+* **angular-ci:** Migrate from `npm` to `bun` for package management. This changes the public interface, requiring a new input for bun version instead of node.
+
+### Features
+
+* **angular-ci:** Migrate from `npm` to `bun` for package management. This changes the public interface, requiring a new input for bun version instead of node. ([c525266](https://github.com/cccteam/github-workflows/commit/c525266075514aefeaf9e5834f1b4fd4d25fbdba))
+
 ## [5.24.0](https://github.com/cccteam/github-workflows/compare/v5.23.2...v5.24.0) (2026-03-31)
 
 
