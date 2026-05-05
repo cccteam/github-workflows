@@ -1,0 +1,79 @@
+# This workflow performs continuous Checkov security scanning of the entire Terraform codebase.
+# It runs on a weekly schedule against the default branch and uploads results to GitHub Code Scanning.
+#
+# Checkov check skips should be configured in the calling repository's .checkov.yaml file.
+
+name: Terraform Security Scan (Reusable)
+
+permissions: {}
+
+on:
+  workflow_call:
+    inputs:
+      schedule:
+        description: 'Cron expression for the scan schedule. Defaults to weekly on Monday at midnight UTC.'
+        required: false
+        type: string
+        default: '0 0 * * 1'
+  workflow_dispatch:
+
+jobs:
+  tflint-full-scan:
+    name: TFLint Full Repository Scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    steps:
+      - name: Checkout default branch
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Set up TFLint
+        uses: terraform-linters/setup-tflint@b480b8fcdaa6f2c577f8e4fa799e89e756bb7c93 # v6.2.2
+        with:
+          tflint_version: latest
+
+      - name: Init TFLint
+        run: tflint --init
+
+      - name: Run TFLint
+        run: tflint --recursive --format=sarif --minimum-failure-severity=warning > tflint-results.sarif || true
+
+      - name: Upload TFLint SARIF file
+        if: hashFiles('tflint-results.sarif') != ''
+        uses: github/codeql-action/upload-sarif@e46ed2cbd01164d986452f91f178727624ae40d7 # v4.35.3
+        with:
+          sarif_file: tflint-results.sarif
+          category: tflint
+
+  checkov-full-scan:
+    name: Checkov Full Repository Scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    steps:
+      - name: Checkout default branch
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Checkov GitHub Action
+        uses: bridgecrewio/checkov-action@9201a8e6eaa919e3444d7c4ca691896efde4f033 # v12.3101.0
+        with:
+          directory: .
+          output_format: cli,sarif
+          output_file_path: console,results.sarif
+          quiet: true
+          soft_fail: true
+
+      - name: Upload SARIF file
+        if: hashFiles('results.sarif') != ''
+        uses: github/codeql-action/upload-sarif@e46ed2cbd01164d986452f91f178727624ae40d7 # v4.35.3
+        with:
+          sarif_file: results.sarif
+          category: checkov
