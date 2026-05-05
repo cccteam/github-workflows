@@ -316,8 +316,8 @@ jobs:
         uses: bridgecrewio/checkov-action@9201a8e6eaa919e3444d7c4ca691896efde4f033 # v12.3101.0
         with:
           file: ${{ steps.changed-files.outputs.files }}
-          output_format: ${{ inputs.output_format }}
-          output_file_path: ${{ inputs.output_file_path }}
+          output_format: ${{ inputs.upload_sarif == true && 'cli,sarif' || inputs.output_format }}
+          output_file_path: ${{ inputs.upload_sarif == true && 'console,results.sarif' || inputs.output_file_path }}
           quiet: true
           skip_check: ${{ inputs.skip_check }}
 

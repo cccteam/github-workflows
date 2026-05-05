@@ -30,8 +30,12 @@ This repository provides a collection of reusable GitHub Actions workflow templa
 
 - **Terraform CI**
   [`terraform-ci.yml`](.github/workflows/terraform-ci.yml):
-  Comprehensive Terraform CI workflow that auto-formats files (and pushes changes back to the PR), generates documentation, runs linting, and performs security scanning. Includes TFLint and Checkov scans optimized for changed files only.
+  Comprehensive Terraform CI workflow that auto-formats files (and pushes changes back to the PR), generates documentation, runs linting, and performs security scanning. Includes TFLint and Checkov scans optimized for changed files only. Optionally uploads SARIF results to GitHub Advanced Security Dashboard.
 
+- **Terraform Security Scan**
+  [`terraform-security-scan.yml`](.github/workflows/terraform-security-scan.yml):
+  Continuously scans the entire Terraform codebase on a weekly schedule (or manually triggered).
+  
 ### PR Quality & Security Workflows
 
 - **Semantic Pull Request Title**
@@ -167,9 +171,45 @@ jobs:
       app_pem: ${{ secrets.TERRAFORM_APP_PEM }}
 ```
 
-**Note:** The `working_dirs` input is deprecated and no longer required. The workflow now automatically detects changed Terraform directories and scans only those files. SARIF upload is optional and defaults to false.
+### Terraform CI Example
 
-**Note:** For most use cases, the comprehensive [`terraform-ci.yml`](#terraform-ci-example) workflow is recommended as it combines all checks efficiently.
+```yaml
+name: Terraform CI
+on:
+  pull_request:
+    paths:
+      - 'terraform/**'
+
+jobs:
+  terraform-ci:
+    uses: cccteam/github-workflows/.github/workflows/terraform-ci.yml@v5.9.0
+    with:
+      terraform_version: '1.9.0'
+      upload_sarif: false    # Optional: Upload security results to GitHub Security
+    secrets:
+      app_id: ${{ secrets.TERRAFORM_APP_ID }}
+      app_pem: ${{ secrets.TERRAFORM_APP_PEM }}
+```
+
+**Note:** The `working_dirs` input is deprecated and no longer required. The workflow now automatically detects changed Terraform directories and scans only those files. When `upload_sarif: true` is set, SARIF output is automatically enabled for both TFLint and Checkov regardless of the `output_format` and `output_file_path` inputs.
+
+### Terraform Security Scan Example
+
+```yaml
+name: Terraform Security Scan
+on:
+  schedule:
+    - cron: '0 0 * * 1' # Weekly on Monday at midnight UTC
+  workflow_dispatch:
+
+jobs:
+  security-scan:
+    uses: cccteam/github-workflows/.github/workflows/terraform-security-scan.yml@v5.9.0
+```
+
+Results are always uploaded to GitHub Advanced Security Dashboard. No secrets are required — the workflow uses the built-in `GITHUB_TOKEN` via `security-events: write` permission.
+
+**Note:** For most use cases, the comprehensive [`terraform-ci.yml`](#terraform-ci-example) workflow is recommended for PR checks, while [`terraform-security-scan.yml`](#terraform-security-scan-example) handles continuous full-repository scanning on a schedule.
 
 Refer to each workflow file for available inputs, secrets, and configuration options. When referencing workflows, it's recommended to use a specific version tag (e.g., `@v5.9.0`) rather than `@master` to ensure workflow stability.
 
