@@ -56,7 +56,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: ${{ inputs.working-directory }}
-        run: bun install --frozen-lockfile
+        run: bun ci
 
       - name: Run commands for each project
         working-directory: ${{ inputs.working-directory }}
