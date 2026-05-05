@@ -1,7 +1,7 @@
 # This workflow performs continuous Checkov security scanning of the entire Terraform codebase.
 # It runs on a weekly schedule against the default branch and uploads results to GitHub Code Scanning.
 #
-# Checkov check skips should be configured in the calling repository's .checkov.yaml file.
+# Checkov check skips should be configured in the calling repository's .checkov.yaml file or inline where applicable.
 
 name: Terraform Security Scan (Reusable)
 
