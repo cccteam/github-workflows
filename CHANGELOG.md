@@ -1,5 +1,17 @@
 # Changelog
 
+## [6.1.0](https://github.com/cccteam/github-workflows/compare/v6.0.0...v6.1.0) (2026-05-05)
+
+
+### Features
+
+* **security-scan:** add Checkov security scan workflow ([#167](https://github.com/cccteam/github-workflows/issues/167)) ([f5b0f47](https://github.com/cccteam/github-workflows/commit/f5b0f47a4fef3c0bccd32bbd362d0d85f124a64a))
+
+
+### Bug Fixes
+
+* **angular-ci:** Use bun ci in angular-ci to enforce frozen lockfile ([#165](https://github.com/cccteam/github-workflows/issues/165)) ([c84c75f](https://github.com/cccteam/github-workflows/commit/c84c75f26779369d692ecc931b6fff512aedd103))
+
 ## [6.0.0](https://github.com/cccteam/github-workflows/compare/v5.24.0...v6.0.0) (2026-05-01)
 
 
