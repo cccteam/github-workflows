@@ -1,5 +1,5 @@
 # This workflow performs security scanning for Go projects.
-#  - govulncheck-action is used to check for vulnerabilities in the Go modules
+#  - govulncheck is used to check for vulnerabilities in the Go modules
 #  - trivy-action is used to check for vulnerabilities in the application's final docker image (optional, disabled by default)
 #  - Dependabot security alerts are checked using the GitHub API
 # GitHub issues are created for failed jobs.
@@ -158,16 +158,6 @@ jobs:
           echo "REPORT_NAME=govulncheck-${{ matrix.checkout-ref == '' && '1' || '2' }}-$SAFE_MODULE_NAME" >> $GITHUB_ENV
           echo "REPORT_PATH=govulncheck-report-${{ matrix.checkout-ref == '' && '1' || '2' }}-$SAFE_MODULE_NAME.txt" >> $GITHUB_ENV
 
-      - name: Set up Go for govulncheck
-        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
-        with:
-          go-version: 'stable'
-          cache: false
-
-      - name: Install govulncheck
-        run: go install golang.org/x/vuln/cmd/govulncheck@${{ inputs.govulncheck-version }}
-        shell: bash
-
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: ${{ matrix.checkout-ref }}
@@ -178,6 +168,10 @@ jobs:
         with:
           go-version-file: ${{ matrix.module.dir }}/go.mod
           cache: false
+
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@${{ inputs.govulncheck-version }}
+        shell: bash
 
       - name: Run govulncheck
         continue-on-error: true
