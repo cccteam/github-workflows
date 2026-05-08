@@ -177,6 +177,7 @@ jobs:
         env:
           GOTOOLCHAIN: auto
         with:
+          go-version-input: ''
           go-version-file: ${{ matrix.module-dir }}/go.mod
           go-package: ./...
           work-dir: ${{ matrix.module-dir }}
