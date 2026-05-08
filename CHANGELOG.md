@@ -1,5 +1,12 @@
 # Changelog
 
+## [6.1.1](https://github.com/cccteam/github-workflows/compare/v6.1.0...v6.1.1) (2026-05-08)
+
+
+### Bug Fixes
+
+* Use proper go version for govulncheck ([#168](https://github.com/cccteam/github-workflows/issues/168)) ([455b774](https://github.com/cccteam/github-workflows/commit/455b7740ac196c45be226cee459c1196230c72c3))
+
 ## [6.1.0](https://github.com/cccteam/github-workflows/compare/v6.0.0...v6.1.0) (2026-05-05)
 
 
