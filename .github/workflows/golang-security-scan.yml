@@ -270,7 +270,7 @@ jobs:
           semgrep scan --config ${{ inputs.semgrep-config }}
       - name: Upload SARIF file for GitHub Advanced Security Dashboard
         if: inputs.upload-sarif
-        uses: github/codeql-action/upload-sarif@e46ed2cbd01164d986452f91f178727624ae40d7 # v4.35.3
+        uses: github/codeql-action/upload-sarif@7211b7c8077ea37d8641b6271f6a365a22a5fbfa # v4.36.0
         with:
           sarif_file: semgrep.sarif
           category: semgrep
@@ -588,7 +588,7 @@ jobs:
           echo "$MESSAGE" >> $GITHUB_ENV
           echo 'EOF' >> $GITHUB_ENV
 
-      - uses: slackapi/slack-github-action@03ea5433c137af7c0495bc0cad1af10403fc800c # v3.0.2
+      - uses: slackapi/slack-github-action@45a88b9581bfab2566dc881e2cd66d334e621e2c # v3.0.3
         with:
           method: chat.postMessage
           token: ${{ secrets.SLACK_BOT_TOKEN }}
