@@ -44,7 +44,7 @@ jobs:
 
       - name: Upload TFLint SARIF file
         if: hashFiles('tflint-results.sarif') != ''
-        uses: github/codeql-action/upload-sarif@e46ed2cbd01164d986452f91f178727624ae40d7 # v4.35.3
+        uses: github/codeql-action/upload-sarif@7211b7c8077ea37d8641b6271f6a365a22a5fbfa # v4.36.0
         with:
           sarif_file: tflint-results.sarif
           category: tflint
@@ -63,7 +63,7 @@ jobs:
           fetch-depth: 0
 
       - name: Checkov GitHub Action
-        uses: bridgecrewio/checkov-action@9201a8e6eaa919e3444d7c4ca691896efde4f033 # v12.3101.0
+        uses: bridgecrewio/checkov-action@4048c972aae68d0b983a48bb3479aab2d877b898 # v12.3102.0
         with:
           directory: .
           output_format: cli,sarif
@@ -73,7 +73,7 @@ jobs:
 
       - name: Upload SARIF file
         if: hashFiles('results.sarif') != ''
-        uses: github/codeql-action/upload-sarif@e46ed2cbd01164d986452f91f178727624ae40d7 # v4.35.3
+        uses: github/codeql-action/upload-sarif@7211b7c8077ea37d8641b6271f6a365a22a5fbfa # v4.36.0
         with:
           sarif_file: results.sarif
           category: checkov
