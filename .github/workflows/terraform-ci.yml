@@ -68,6 +68,23 @@ on:
         required: true
 
 jobs:
+  apply-human-label:
+    name: Apply human label to PR
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Add "human" label to PR
+        if: ${{ !contains(fromJson('["renovate[bot]", "dependabot[bot]"]'), github.actor) }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              labels; ['human']
+            })
   terraform-docs:
     name: Format and document Terraform
     runs-on: ubuntu-latest
