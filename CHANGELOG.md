@@ -1,5 +1,12 @@
 # Changelog
 
+## [6.1.2](https://github.com/cccteam/github-workflows/compare/v6.1.1...v6.1.2) (2026-06-26)
+
+
+### Bug Fixes
+
+* add issues read permission to closes-issue-check workflow ([#171](https://github.com/cccteam/github-workflows/issues/171)) ([0e18082](https://github.com/cccteam/github-workflows/commit/0e180826197700768dda821327266b3b7c555321))
+
 ## [6.1.1](https://github.com/cccteam/github-workflows/compare/v6.1.0...v6.1.1) (2026-05-08)
 
 
