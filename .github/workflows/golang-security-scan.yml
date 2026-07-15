@@ -134,7 +134,7 @@ jobs:
     outputs:
       modules: ${{ steps.set-modules.outputs.modules }}
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - id: set-modules
         run: |
           modules=$(cat ${{ inputs.release-please-config-file }} 2>/dev/null | jq -csS --arg workingDir ${{ inputs.working-directory }} 'if length == 0 then [{dir: "\($workingDir)", name: ""}] else (.[0].packages // {}) | to_entries | if length == 0 then [{dir: "\($workingDir)", name: ""}] else map({dir: (if .key == "." then "\($workingDir)" else "\($workingDir)/\(.key)" end), name: (.value."package-name" // (if .key == "." then "" else .key end))}) end end')
@@ -158,13 +158,13 @@ jobs:
           echo "REPORT_NAME=govulncheck-${{ matrix.checkout-ref == '' && '1' || '2' }}-$SAFE_MODULE_NAME" >> $GITHUB_ENV
           echo "REPORT_PATH=govulncheck-report-${{ matrix.checkout-ref == '' && '1' || '2' }}-$SAFE_MODULE_NAME.txt" >> $GITHUB_ENV
 
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ matrix.checkout-ref }}
           fetch-tags: true
 
       - name: Set up Go for app
-        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: ${{ matrix.module.dir }}/go.mod
           cache: false
@@ -259,7 +259,7 @@ jobs:
       image: semgrep/semgrep
     steps:
       - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Perform Semgrep Analysis and Generate SARIF
         if: inputs.upload-sarif
         run: |
@@ -270,7 +270,7 @@ jobs:
           semgrep scan --config ${{ inputs.semgrep-config }}
       - name: Upload SARIF file for GitHub Advanced Security Dashboard
         if: inputs.upload-sarif
-        uses: github/codeql-action/upload-sarif@e46ed2cbd01164d986452f91f178727624ae40d7 # v4.35.3
+        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
         with:
           sarif_file: semgrep.sarif
           category: semgrep
@@ -292,7 +292,7 @@ jobs:
           echo "REPORT_NAME=trivy-${{ matrix.checkout-ref == '' && '1' || '2' }}" >> $GITHUB_ENV
           echo "REPORT_PATH=trivy-report-${{ matrix.checkout-ref == '' && '1' || '2' }}.txt" >> $GITHUB_ENV
 
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ matrix.checkout-ref }}
           fetch-tags: true
@@ -356,7 +356,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Prepare ignored alerts file
         run: |
@@ -588,7 +588,7 @@ jobs:
           echo "$MESSAGE" >> $GITHUB_ENV
           echo 'EOF' >> $GITHUB_ENV
 
-      - uses: slackapi/slack-github-action@03ea5433c137af7c0495bc0cad1af10403fc800c # v3.0.2
+      - uses: slackapi/slack-github-action@45a88b9581bfab2566dc881e2cd66d334e621e2c # v3.0.3
         with:
           method: chat.postMessage
           token: ${{ secrets.SLACK_BOT_TOKEN }}
