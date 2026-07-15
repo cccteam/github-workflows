@@ -42,11 +42,17 @@ jobs:
       - name: Run TFLint
         run: tflint --recursive --format=sarif --minimum-failure-severity=warning > tflint-results.sarif || true
 
-      - name: Upload TFLint SARIF file
+      - name: Filter TFLint SARIF results missing locations
         if: hashFiles('tflint-results.sarif') != ''
+        run: |
+          jq 'del(.runs[].results[] | select((.locations == null) or (.locations | length == 0)))' \
+            tflint-results.sarif > tflint-filtered.sarif
+
+      - name: Upload TFLint SARIF file
+        if: hashFiles('tflint-filtered.sarif') != ''
         uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
         with:
-          sarif_file: tflint-results.sarif
+          sarif_file: tflint-filtered.sarif
           category: tflint
 
   checkov-full-scan:
