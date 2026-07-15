@@ -1,5 +1,12 @@
 # Changelog
 
+## [6.1.3](https://github.com/cccteam/github-workflows/compare/v6.1.2...v6.1.3) (2026-07-15)
+
+
+### Bug Fixes
+
+* filter TFLint SARIF results missing locations before upload ([#174](https://github.com/cccteam/github-workflows/issues/174)) ([259a540](https://github.com/cccteam/github-workflows/commit/259a540f34a51e45386076deff686cba531c0646))
+
 ## [6.1.2](https://github.com/cccteam/github-workflows/compare/v6.1.1...v6.1.2) (2026-06-26)
 
 
