@@ -1,7 +1,6 @@
 # This reusable workflow can be used in repositories that include a Dockerfile to perform the following actions:
 #  - Lint the Docker file via 'hadolint'.
 #  - Build the Docker image.
-#  - Optionally scan the Docker image for vulnerabilities via the 'Trivy' scanner (disabled by default).
 #  - Optionally scan the Docker image for vulnerabilities via the 'Grype' scanner (disabled by default).
 #  - Optionally upload Grype scan results as a SARIF report to GitHub Advanced Security (disabled by default).
 #  - Optionally generate a Software Bill of Materials (SBOM) via 'Syft' (disabled by default).
@@ -23,26 +22,6 @@ on:
         type: string
         default: '[]' # empty array
         description: Json-formatted array of strings to pass to the docker build command as build args. e.g. '["arg1", "arg2"]'
-      execute-trivy-scan:
-        required: false
-        type: boolean
-        default: false
-        description: Execute Trivy vulnerability scanning of the Docker image
-      vuln-types:
-        required: false
-        type: string
-        default: 'os,library'
-        description: Comma-separated list of vulnerability types to scan for. e.g. 'os,library'
-      ignore-unfixed:
-        required: false
-        type: boolean
-        default: false
-        description: Ignore unfixed vulnerabilities
-      severity:
-        required: false
-        type: string
-        default: 'LOW,MEDIUM,HIGH,CRITICAL'
-        description: Comma-separated list of vulnerability severities to scan for. e.g. 'LOW,MEDIUM,HIGH,CRITICAL'
       execute-grype-scan:
         required: false
         type: boolean
@@ -115,30 +94,21 @@ jobs:
           echo "BUILD_ARGS=$build_args" >> $GITHUB_ENV
           dockerfile_safe=$(echo '${{ inputs.dockerfile }}' | sed 's/[^a-zA-Z0-9._-]/-/g')
           echo "SBOM_ARTIFACT_NAME=sbom-${dockerfile_safe}" >> $GITHUB_ENV
+          echo "sbom_artifact_name=sbom-${dockerfile_safe}" >> $GITHUB_OUTPUT
 
       - name: Build docker image
         id: build
         run: |
           repo_name=$(echo "${{ github.repository }}" | awk '{print tolower($0)}')
           echo "REPO_NAME=$repo_name" >> $GITHUB_ENV
+          echo "repo_name=$repo_name" >> $GITHUB_OUTPUT
           docker build $BUILD_ARGS -t $repo_name:latest -f ${{ inputs.dockerfile }} .
-
-      - name: Run Trivy vulnerability scanner
-        if: ${{ inputs.execute-trivy-scan }}
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with:
-          image-ref: '${{ env.REPO_NAME }}:latest'
-          format: 'table'
-          exit-code: '1'
-          ignore-unfixed: '${{ inputs.ignore-unfixed }}'
-          vuln-type: '${{ inputs.vuln-types }}'
-          severity: '${{ inputs.severity }}'
 
       - name: Run Grype vulnerability scanner
         if: ${{ inputs.execute-grype-scan && !inputs.upload-sarif }}
         uses: anchore/scan-action@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2 # v7.4.0
         with:
-          image: '${{ env.REPO_NAME }}:latest'
+          image: '${{ steps.build.outputs.repo_name }}:latest'
           fail-build: 'true'
           severity-cutoff: '${{ inputs.grype-fail-on-severity }}'
           output-format: 'table'
@@ -148,7 +118,7 @@ jobs:
         if: ${{ inputs.execute-grype-scan && inputs.upload-sarif }}
         uses: anchore/scan-action@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2 # v7.4.0
         with:
-          image: '${{ env.REPO_NAME }}:latest'
+          image: '${{ steps.build.outputs.repo_name }}:latest'
           fail-build: 'false'
           severity-cutoff: '${{ inputs.grype-fail-on-severity }}'
           output-format: 'sarif'
@@ -165,9 +135,9 @@ jobs:
         if: ${{ inputs.generate-sbom }}
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
         with:
-          image: '${{ env.REPO_NAME }}:latest'
+          image: '${{ steps.build.outputs.repo_name }}:latest'
           format: '${{ inputs.sbom-format }}'
-          artifact-name: '${{ env.SBOM_ARTIFACT_NAME }}'
+          artifact-name: '${{ steps.prepare-build-args.outputs.sbom_artifact_name }}'
           upload-artifact: true
 
       - name: Authenticate to GCP
