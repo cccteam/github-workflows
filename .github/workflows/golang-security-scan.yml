@@ -1,6 +1,6 @@
 # This workflow performs security scanning for Go projects.
 #  - govulncheck is used to check for vulnerabilities in the Go modules
-#  - trivy-action is used to check for vulnerabilities in the application's final docker image (optional, disabled by default)
+#  - grype is used to check for vulnerabilities in the application's final docker image (optional, disabled by default)
 #  - Dependabot security alerts are checked using the GitHub API
 # GitHub issues are created for failed jobs.
 # A Slack message is sent (per user provided details) if either security check fails.
@@ -24,7 +24,17 @@ on:
         required: false
         type: boolean
         default: false
-        description: Execute Trivy vulnerability scanning of the Docker image
+        description: '[DEPRECATED] Use execute-grype-scan. Kept for backward compatibility.'
+      execute-grype-scan:
+        required: false
+        type: boolean
+        default: false
+        description: Execute Grype vulnerability scanning of the Docker image
+      grype-fail-on-severity:
+        required: false
+        type: string
+        default: 'high'
+        description: Minimum vulnerability severity that causes Grype to fail the build (negligible, low, medium, high, critical)
 
       execute-dependabot-check:
         required: false
@@ -71,7 +81,7 @@ on:
         required: false
         type: boolean
         default: false
-        description: 'Upload SARIF report for GitHub Advanced Security Dashboard'
+        description: 'Upload SARIF reports (where supported) for GitHub Advanced Security Dashboard'
       semgrep-config:
         required: false
         type: string
@@ -153,10 +163,11 @@ jobs:
         module: ${{ fromJson(needs.detect-modules.outputs.modules) }}
     steps:
       - name: Set report variables
+        id: set-report-vars
         run: |
           SAFE_MODULE_NAME=$(echo "${{ matrix.module.name }}" | sed 's|[./]|-|g')
-          echo "REPORT_NAME=govulncheck-${{ matrix.checkout-ref == '' && '1' || '2' }}-$SAFE_MODULE_NAME" >> $GITHUB_ENV
-          echo "REPORT_PATH=govulncheck-report-${{ matrix.checkout-ref == '' && '1' || '2' }}-$SAFE_MODULE_NAME.txt" >> $GITHUB_ENV
+          echo "report_name=govulncheck-${{ matrix.checkout-ref == '' && '1' || '2' }}-$SAFE_MODULE_NAME" >> $GITHUB_OUTPUT
+          echo "report_path=govulncheck-report-${{ matrix.checkout-ref == '' && '1' || '2' }}-$SAFE_MODULE_NAME.txt" >> $GITHUB_OUTPUT
 
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -177,7 +188,7 @@ jobs:
         continue-on-error: true
         run: |
           set +e # Ensure the script does not exit immediately on error
-          govulncheck -C ${{ matrix.module.dir }} ./... > ${{ env.REPORT_PATH }}
+          govulncheck -C ${{ matrix.module.dir }} ./... > ${{ steps.set-report-vars.outputs.report_path }}
           GOVULNCHECK_STATUS=$?
           if [ $GOVULNCHECK_STATUS -ne 0 ]; then
             touch vulnerabilities-found
@@ -187,13 +198,13 @@ jobs:
       - name: Save govulncheck report as artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: ${{ env.REPORT_NAME }}
-          path: ${{ env.REPORT_PATH }}
+          name: ${{ steps.set-report-vars.outputs.report_name }}
+          path: ${{ steps.set-report-vars.outputs.report_path }}
 
       - name: Report findings
         run: |
           if [[ -f vulnerabilities-found ]]; then
-            cat ${{ env.REPORT_PATH }}
+            cat ${{ steps.set-report-vars.outputs.report_path }}
             exit 1;
           else
             echo "No vulnerabilities found"
@@ -275,12 +286,13 @@ jobs:
           sarif_file: semgrep.sarif
           category: semgrep
 
-  trivy:
+  grype:
     needs: env-setup
-    name: Trivy Scan
+    name: Grype Scan
     runs-on: ${{ inputs.runs-on }}
-    if: ${{ inputs.execute-trivy-scan }}
+    if: ${{ inputs.execute-grype-scan || inputs.execute-trivy-scan }}
     permissions:
+      security-events: write
       contents: read
     strategy:
       fail-fast: false
@@ -288,9 +300,10 @@ jobs:
         checkout-ref: ${{ fromJson(needs.env-setup.outputs.checkout-refs) }}
     steps:
       - name: Set report variables
+        id: set-report-vars
         run: |
-          echo "REPORT_NAME=trivy-${{ matrix.checkout-ref == '' && '1' || '2' }}" >> $GITHUB_ENV
-          echo "REPORT_PATH=trivy-report-${{ matrix.checkout-ref == '' && '1' || '2' }}.txt" >> $GITHUB_ENV
+          echo "report_name=grype-${{ matrix.checkout-ref == '' && '1' || '2' }}" >> $GITHUB_OUTPUT
+          echo "report_path=grype-report-${{ matrix.checkout-ref == '' && '1' || '2' }}.txt" >> $GITHUB_OUTPUT
 
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -305,9 +318,10 @@ jobs:
           echo "BUILD_ARGS=$build_args" >> $GITHUB_ENV
 
       - name: Build docker image
+        id: build-image
         run: |
           repo_name=$(echo "${{ github.repository }}" | awk '{print tolower($0)}')
-          echo "REPO_NAME=$repo_name" >> $GITHUB_ENV
+          echo "repo_name=$repo_name" >> $GITHUB_OUTPUT
 
           docker_files="${{ inputs.docker-build-files }}"
           # Trim the '[]' and '"' characters from the array
@@ -325,28 +339,44 @@ jobs:
             docker build $BUILD_ARGS -t $repo_name:latest .
           fi
 
-      - name: Run Trivy vulnerability scanner (capture findings)
-        id: trivy_scan
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+      - name: Run Grype vulnerability scanner (capture findings)
+        id: grype_scan
+        uses: anchore/scan-action@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2 # v7.4.0
         with:
-          image-ref: '${{ env.REPO_NAME }}:latest'
-          format: 'table'
-          output: ${{ env.REPORT_PATH }}
-          vuln-type: 'os,library'
-          severity: 'LOW,MEDIUM,HIGH,CRITICAL'
-          exit-code: '1'
+          image: '${{ steps.build-image.outputs.repo_name }}:latest'
+          fail-build: 'true'
+          severity-cutoff: '${{ inputs.grype-fail-on-severity }}'
+          output-format: 'table'
+          output-file: '${{ steps.set-report-vars.outputs.report_path }}'
         continue-on-error: true
 
-      - name: Save Trivy report as artifact
+      - name: Run Grype SARIF scan
+        id: grype_sarif
+        if: inputs.upload-sarif
+        uses: anchore/scan-action@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2 # v7.4.0
+        with:
+          image: '${{ steps.build-image.outputs.repo_name }}:latest'
+          fail-build: 'false'
+          severity-cutoff: '${{ inputs.grype-fail-on-severity }}'
+          output-format: 'sarif'
+
+      - name: Upload Grype SARIF file for GitHub Advanced Security Dashboard
+        if: inputs.upload-sarif
+        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+        with:
+          sarif_file: ${{ steps.grype_sarif.outputs.sarif }}
+          category: grype
+
+      - name: Save Grype report as artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: ${{ env.REPORT_NAME }}
-          path: ${{ env.REPORT_PATH }}
+          name: ${{ steps.set-report-vars.outputs.report_name }}
+          path: ${{ steps.set-report-vars.outputs.report_path }}
 
-      - name: Report failed Trivy scan
-        if: steps.trivy_scan.outcome == 'failure'
+      - name: Report failed Grype scan
+        if: steps.grype_scan.outcome == 'failure'
         run: |
-          cat ${{ env.REPORT_PATH }}
+          cat ${{ steps.set-report-vars.outputs.report_path }}
           exit 1
 
   dependabot:
@@ -418,8 +448,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        label: [govulncheck, trivy, dependabot]
-    needs: [govulncheck, trivy, dependabot, merge-govulncheck-reports]
+        label: [govulncheck, grype, dependabot]
+    needs: [govulncheck, grype, dependabot, merge-govulncheck-reports]
     if: always()
     steps:
       - name: Setup environment for this matrix job
@@ -427,7 +457,7 @@ jobs:
         shell: bash
         run: |
           if [[ "${{ needs.govulncheck.result }}" == "failure" && "${{ matrix.label }}" == "govulncheck" ]] || \
-           [[ "${{ needs.trivy.result }}" == "failure" && "${{ matrix.label }}" == "trivy" ]] || \
+           [[ "${{ needs.grype.result }}" == "failure" && "${{ matrix.label }}" == "grype" ]] || \
            [[ "${{ needs.dependabot.result }}" == "failure" && "${{ matrix.label }}" == "dependabot" ]]; then
 
             # Enable the steps to run
@@ -436,8 +466,8 @@ jobs:
             # Set the issue title
             if [[ "${{ matrix.label }}" == "govulncheck" ]]; then
               ISSUE_TITLE="Go Vulnerability Report"
-            elif [[ "${{ matrix.label }}" == "trivy" ]]; then
-              ISSUE_TITLE="Trivy Vulnerability Report"
+            elif [[ "${{ matrix.label }}" == "grype" ]]; then
+              ISSUE_TITLE="Grype Vulnerability Report"
             elif [[ "${{ matrix.label }}" == "dependabot" ]]; then
               ISSUE_TITLE="Dependabot Security Alerts"
             fi
@@ -544,8 +574,8 @@ jobs:
   slack_notification:
     name: Send Slack notification for failed jobs
     runs-on: ${{ inputs.runs-on }}
-    needs: [govulncheck, trivy, create_issues, dependabot]
-    if: always() && (needs.govulncheck.result == 'failure' || needs.trivy.result == 'failure' || needs.dependabot.result == 'failure')
+    needs: [govulncheck, grype, create_issues, dependabot]
+    if: always() && (needs.govulncheck.result == 'failure' || needs.grype.result == 'failure' || needs.dependabot.result == 'failure')
     steps:
       - name: Download govulncheck issue artifact
         if: needs.govulncheck.result == 'failure'
@@ -554,11 +584,11 @@ jobs:
           name: govulncheck-issue
         continue-on-error: true # Continue if the artifact is not found
 
-      - name: Download trivy issue artifact
-        if: inputs.execute-trivy-scan && needs.trivy.result == 'failure'
+      - name: Download grype issue artifact
+        if: (inputs.execute-grype-scan || inputs.execute-trivy-scan) && needs.grype.result == 'failure'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: trivy-issue
+          name: grype-issue
         continue-on-error: true # Continue if the artifact is not found
 
       - name: Download dependabot issue artifact
@@ -576,17 +606,17 @@ jobs:
             MESSAGE="$MESSAGE
             - $(cat govulncheck-issue.txt)"
           fi
-          if [ -f trivy-issue.txt ]; then
+          if [ -f grype-issue.txt ]; then
             MESSAGE="$MESSAGE
-            - $(cat trivy-issue.txt)"
+            - $(cat grype-issue.txt)"
           fi
           if [ -f dependabot-issue.txt ]; then
             MESSAGE="$MESSAGE
             - $(cat dependabot-issue.txt)"
           fi
-          echo 'SLACK_MESSAGE<<EOF' >> $GITHUB_ENV
-          echo "$MESSAGE" >> $GITHUB_ENV
-          echo 'EOF' >> $GITHUB_ENV
+          echo 'slack_message<<EOF' >> $GITHUB_OUTPUT
+          echo "$MESSAGE" >> $GITHUB_OUTPUT
+          echo 'EOF' >> $GITHUB_OUTPUT
 
       - uses: slackapi/slack-github-action@45a88b9581bfab2566dc881e2cd66d334e621e2c # v3.0.3
         with:
@@ -594,4 +624,4 @@ jobs:
           token: ${{ secrets.SLACK_BOT_TOKEN }}
           payload: |
             channel: ${{ inputs.slack-channel-id || secrets.SLACK_CHANNEL_ID }}
-            text: ${{ toJSON(env.SLACK_MESSAGE) }}
+            text: ${{ toJSON(steps.prepare_message.outputs.slack_message) }}
