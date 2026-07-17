@@ -93,14 +93,12 @@ jobs:
           build_args=$(echo $build_args | jq -r '.[] | "--build-arg " + .' | xargs)
           echo "BUILD_ARGS=$build_args" >> $GITHUB_ENV
           dockerfile_safe=$(echo '${{ inputs.dockerfile }}' | sed 's/[^a-zA-Z0-9._-]/-/g')
-          echo "SBOM_ARTIFACT_NAME=sbom-${dockerfile_safe}" >> $GITHUB_ENV
           echo "sbom_artifact_name=sbom-${dockerfile_safe}" >> $GITHUB_OUTPUT
 
       - name: Build docker image
         id: build
         run: |
           repo_name=$(echo "${{ github.repository }}" | awk '{print tolower($0)}')
-          echo "REPO_NAME=$repo_name" >> $GITHUB_ENV
           echo "repo_name=$repo_name" >> $GITHUB_OUTPUT
           docker build $BUILD_ARGS -t $repo_name:latest -f ${{ inputs.dockerfile }} .
 
