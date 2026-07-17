@@ -93,20 +93,19 @@ jobs:
           build_args=$(echo $build_args | jq -r '.[] | "--build-arg " + .' | xargs)
           echo "BUILD_ARGS=$build_args" >> $GITHUB_ENV
           dockerfile_safe=$(echo '${{ inputs.dockerfile }}' | sed 's/[^a-zA-Z0-9._-]/-/g')
-          echo "sbom_artifact_name=sbom-${dockerfile_safe}" >> $GITHUB_OUTPUT
+          echo "SBOM_ARTIFACT_NAME=sbom-${dockerfile_safe}" >> $GITHUB_ENV
 
       - name: Build docker image
-        id: build
         run: |
           repo_name=$(echo "${{ github.repository }}" | awk '{print tolower($0)}')
-          echo "repo_name=$repo_name" >> $GITHUB_OUTPUT
+          echo "REPO_NAME=$repo_name" >> $GITHUB_ENV
           docker build $BUILD_ARGS -t $repo_name:latest -f ${{ inputs.dockerfile }} .
 
       - name: Run Grype vulnerability scanner
         if: ${{ inputs.execute-grype-scan && !inputs.upload-sarif }}
         uses: anchore/scan-action@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2 # v7.4.0
         with:
-          image: '${{ steps.build.outputs.repo_name }}:latest'
+          image: '${{ env.REPO_NAME }}:latest'
           fail-build: 'true'
           severity-cutoff: '${{ inputs.grype-fail-on-severity }}'
           output-format: 'table'
@@ -116,7 +115,7 @@ jobs:
         if: ${{ inputs.execute-grype-scan && inputs.upload-sarif }}
         uses: anchore/scan-action@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2 # v7.4.0
         with:
-          image: '${{ steps.build.outputs.repo_name }}:latest'
+          image: '${{ env.REPO_NAME }}:latest'
           fail-build: 'false'
           severity-cutoff: '${{ inputs.grype-fail-on-severity }}'
           output-format: 'sarif'
@@ -133,9 +132,9 @@ jobs:
         if: ${{ inputs.generate-sbom }}
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
         with:
-          image: '${{ steps.build.outputs.repo_name }}:latest'
+          image: '${{ env.REPO_NAME }}:latest'
           format: '${{ inputs.sbom-format }}'
-          artifact-name: '${{ steps.prepare-build-args.outputs.sbom_artifact_name }}'
+          artifact-name: '${{ env.SBOM_ARTIFACT_NAME }}'
           upload-artifact: true
 
       - name: Authenticate to GCP

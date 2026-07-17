@@ -318,10 +318,9 @@ jobs:
           echo "BUILD_ARGS=$build_args" >> $GITHUB_ENV
 
       - name: Build docker image
-        id: build-image
         run: |
           repo_name=$(echo "${{ github.repository }}" | awk '{print tolower($0)}')
-          echo "repo_name=$repo_name" >> $GITHUB_OUTPUT
+          echo "REPO_NAME=$repo_name" >> $GITHUB_ENV
 
           docker_files="${{ inputs.docker-build-files }}"
           # Trim the '[]' and '"' characters from the array
@@ -343,7 +342,7 @@ jobs:
         id: grype_scan
         uses: anchore/scan-action@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2 # v7.4.0
         with:
-          image: '${{ steps.build-image.outputs.repo_name }}:latest'
+          image: '${{ env.REPO_NAME }}:latest'
           fail-build: 'true'
           severity-cutoff: '${{ inputs.grype-fail-on-severity }}'
           output-format: 'table'
@@ -355,7 +354,7 @@ jobs:
         if: inputs.upload-sarif
         uses: anchore/scan-action@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2 # v7.4.0
         with:
-          image: '${{ steps.build-image.outputs.repo_name }}:latest'
+          image: '${{ env.REPO_NAME }}:latest'
           fail-build: 'false'
           severity-cutoff: '${{ inputs.grype-fail-on-severity }}'
           output-format: 'sarif'
