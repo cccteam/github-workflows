@@ -163,11 +163,10 @@ jobs:
         module: ${{ fromJson(needs.detect-modules.outputs.modules) }}
     steps:
       - name: Set report variables
-        id: set-report-vars
         run: |
           SAFE_MODULE_NAME=$(echo "${{ matrix.module.name }}" | sed 's|[./]|-|g')
-          echo "report_name=govulncheck-${{ matrix.checkout-ref == '' && '1' || '2' }}-$SAFE_MODULE_NAME" >> $GITHUB_OUTPUT
-          echo "report_path=govulncheck-report-${{ matrix.checkout-ref == '' && '1' || '2' }}-$SAFE_MODULE_NAME.txt" >> $GITHUB_OUTPUT
+          echo "REPORT_NAME=govulncheck-${{ matrix.checkout-ref == '' && '1' || '2' }}-$SAFE_MODULE_NAME" >> $GITHUB_ENV
+          echo "REPORT_PATH=govulncheck-report-${{ matrix.checkout-ref == '' && '1' || '2' }}-$SAFE_MODULE_NAME.txt" >> $GITHUB_ENV
 
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -188,7 +187,7 @@ jobs:
         continue-on-error: true
         run: |
           set +e # Ensure the script does not exit immediately on error
-          govulncheck -C ${{ matrix.module.dir }} ./... > ${{ steps.set-report-vars.outputs.report_path }}
+          govulncheck -C ${{ matrix.module.dir }} ./... > ${{ env.REPORT_PATH }}
           GOVULNCHECK_STATUS=$?
           if [ $GOVULNCHECK_STATUS -ne 0 ]; then
             touch vulnerabilities-found
@@ -198,13 +197,13 @@ jobs:
       - name: Save govulncheck report as artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: ${{ steps.set-report-vars.outputs.report_name }}
-          path: ${{ steps.set-report-vars.outputs.report_path }}
+          name: ${{ env.REPORT_NAME }}
+          path: ${{ env.REPORT_PATH }}
 
       - name: Report findings
         run: |
           if [[ -f vulnerabilities-found ]]; then
-            cat ${{ steps.set-report-vars.outputs.report_path }}
+            cat ${{ env.REPORT_PATH }}
             exit 1;
           else
             echo "No vulnerabilities found"
@@ -300,10 +299,9 @@ jobs:
         checkout-ref: ${{ fromJson(needs.env-setup.outputs.checkout-refs) }}
     steps:
       - name: Set report variables
-        id: set-report-vars
         run: |
-          echo "report_name=grype-${{ matrix.checkout-ref == '' && '1' || '2' }}" >> $GITHUB_OUTPUT
-          echo "report_path=grype-report-${{ matrix.checkout-ref == '' && '1' || '2' }}.txt" >> $GITHUB_OUTPUT
+          echo "REPORT_NAME=grype-${{ matrix.checkout-ref == '' && '1' || '2' }}" >> $GITHUB_ENV
+          echo "REPORT_PATH=grype-report-${{ matrix.checkout-ref == '' && '1' || '2' }}.txt" >> $GITHUB_ENV
 
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -346,7 +344,7 @@ jobs:
           fail-build: 'true'
           severity-cutoff: '${{ inputs.grype-fail-on-severity }}'
           output-format: 'table'
-          output-file: '${{ steps.set-report-vars.outputs.report_path }}'
+          output-file: '${{ env.REPORT_PATH }}'
         continue-on-error: true
 
       - name: Run Grype SARIF scan
@@ -369,13 +367,13 @@ jobs:
       - name: Save Grype report as artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: ${{ steps.set-report-vars.outputs.report_name }}
-          path: ${{ steps.set-report-vars.outputs.report_path }}
+          name: ${{ env.REPORT_NAME }}
+          path: ${{ env.REPORT_PATH }}
 
       - name: Report failed Grype scan
         if: steps.grype_scan.outcome == 'failure'
         run: |
-          cat ${{ steps.set-report-vars.outputs.report_path }}
+          cat ${{ env.REPORT_PATH }}
           exit 1
 
   dependabot:
@@ -598,7 +596,6 @@ jobs:
         continue-on-error: true # Continue if the artifact is not found
 
       - name: Prepare Slack message
-        id: prepare_message
         run: |
           MESSAGE="URGENT! The security scan failed for the *${{ github.repository }}* repository. Check the logs at ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           if [ -f govulncheck-issue.txt ]; then
@@ -613,9 +610,9 @@ jobs:
             MESSAGE="$MESSAGE
             - $(cat dependabot-issue.txt)"
           fi
-          echo 'slack_message<<EOF' >> $GITHUB_OUTPUT
-          echo "$MESSAGE" >> $GITHUB_OUTPUT
-          echo 'EOF' >> $GITHUB_OUTPUT
+          echo 'SLACK_MESSAGE<<EOF' >> $GITHUB_ENV
+          echo "$MESSAGE" >> $GITHUB_ENV
+          echo 'EOF' >> $GITHUB_ENV
 
       - uses: slackapi/slack-github-action@45a88b9581bfab2566dc881e2cd66d334e621e2c # v3.0.3
         with:
@@ -623,4 +620,4 @@ jobs:
           token: ${{ secrets.SLACK_BOT_TOKEN }}
           payload: |
             channel: ${{ inputs.slack-channel-id || secrets.SLACK_CHANNEL_ID }}
-            text: ${{ toJSON(steps.prepare_message.outputs.slack_message) }}
+            text: ${{ toJSON(env.SLACK_MESSAGE) }}
