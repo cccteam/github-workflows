@@ -308,7 +308,7 @@ jobs:
         id: golangci-lint-sarif
         if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true && inputs.upload-sarif }}
         continue-on-error: true
-        run: golangci-lint run --timeout ${{ inputs.golangci-lint-timeout }} --verbose ${{ matrix.build-tag != '' && format('--build-tags {0}', matrix.build-tag) || '' }} --out-format sarif ./... > ${{ matrix.module-dir }}/golangci-lint.sarif
+        run: golangci-lint run --timeout ${{ inputs.golangci-lint-timeout }} --verbose ${{ matrix.build-tag != '' && format('--build-tags {0}', matrix.build-tag) || '' }} --output.sarif.path=golangci-lint.sarif ./...
         working-directory: ${{ matrix.module-dir }}
 
       - name: Upload golangci-lint SARIF file for GitHub Advanced Security Dashboard
