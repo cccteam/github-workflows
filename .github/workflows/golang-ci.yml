@@ -40,6 +40,16 @@ on:
         type: boolean
         default: false
         description: 'Upload SARIF report for GitHub Advanced Security Dashboard'
+      semgrep-config:
+        required: false
+        type: string
+        default: 'auto'
+        description: 'Semgrep configuration to use (auto, p/security-audit, p/owasp-top-ten, etc.)'
+      semgrep-max-target-bytes:
+        required: false
+        type: number
+        default: 500000
+        description: 'Skip scanning files larger than this size (in bytes)'
       runs-on:
         required: false
         type: string
@@ -251,13 +261,13 @@ jobs:
         if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true && inputs.upload-sarif }}
         run: |
           cd ${{ matrix.module-dir }}
-          semgrep ci --config auto --baseline-commit=${{ steps.baseline.outputs.sha }} --sarif > semgrep.sarif
+          semgrep ci --config ${{ inputs.semgrep-config }} --baseline-commit=${{ steps.baseline.outputs.sha }} --max-target-bytes ${{ inputs.semgrep-max-target-bytes }} --sarif > semgrep.sarif
 
       - name: Perform Semgrep Analysis with CLI Output
         if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true && !inputs.upload-sarif }}
         run: |
           cd ${{ matrix.module-dir }}
-          semgrep ci --config auto --baseline-commit=${{ steps.baseline.outputs.sha }}
+          semgrep ci --config ${{ inputs.semgrep-config }} --baseline-commit=${{ steps.baseline.outputs.sha }} --max-target-bytes ${{ inputs.semgrep-max-target-bytes }}
 
       - name: Upload SARIF file for GitHub Advanced Security Dashboard
         if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true && inputs.upload-sarif }}
