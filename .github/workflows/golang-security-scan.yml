@@ -74,7 +74,6 @@ on:
         description: >
           Path to a json file that contains a JSON array of Dependabot alerts to ignore.
           If not provided, no alerts will be ignored.
-
           Note: These alerts should be copied directly from the Dependabot issue so that the formatting is as expected.
       upload-sarif:
         required: false
@@ -91,7 +90,6 @@ on:
         type: number
         default: 500000
         description: 'Skip scanning files larger than this size (in bytes)'
-
       runs-on:
         required: false
         type: string
