@@ -237,18 +237,27 @@ jobs:
       - name: Checkout repository
         if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true }}
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+
+      - name: Determine baseline commit
+        id: baseline
+        if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true }}
+        # Diffs against the merge-base with master so only findings introduced by this branch are reported,
+        # instead of re-scanning the whole module on every run.
+        run: echo "sha=$(git merge-base refs/remotes/origin/master HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Perform Semgrep Analysis and Generate SARIF
         if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true && inputs.upload-sarif }}
         run: |
           cd ${{ matrix.module-dir }}
-          semgrep scan --config auto --sarif > semgrep.sarif
+          semgrep ci --config auto --baseline-commit=${{ steps.baseline.outputs.sha }} --sarif > semgrep.sarif
 
       - name: Perform Semgrep Analysis with CLI Output
         if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true && !inputs.upload-sarif }}
         run: |
           cd ${{ matrix.module-dir }}
-          semgrep scan --config auto
+          semgrep ci --config auto --baseline-commit=${{ steps.baseline.outputs.sha }}
 
       - name: Upload SARIF file for GitHub Advanced Security Dashboard
         if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true && inputs.upload-sarif }}

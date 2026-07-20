@@ -273,11 +273,11 @@ jobs:
       - name: Perform Semgrep Analysis and Generate SARIF
         if: inputs.upload-sarif
         run: |
-          semgrep scan --config ${{ inputs.semgrep-config }} --sarif > semgrep.sarif
+          semgrep scan --config ${{ inputs.semgrep-config }} --max-target-bytes 500000 --sarif > semgrep.sarif
       - name: Perform Semgrep Analysis with CLI Output
         if: ${{ !inputs.upload-sarif }}
         run: |
-          semgrep scan --config ${{ inputs.semgrep-config }}
+          semgrep scan --config ${{ inputs.semgrep-config }} --max-target-bytes 500000
       - name: Upload SARIF file for GitHub Advanced Security Dashboard
         if: inputs.upload-sarif
         uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
