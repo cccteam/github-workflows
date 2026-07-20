@@ -182,9 +182,13 @@ jobs:
         run: echo "No changes detected in ${{ matrix.module-dir }}. Skipping vuln check."
 
       - name: govulncheck ${{ matrix.module-dir }}
-        if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true && !inputs.upload-sarif }}
+        id: govulncheck
+        if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true }}
         # NOTE: Repo checkout and go setup are handled within 'govulncheck-action'
         # Pinned to master commit because a release has not been cut with the SHA-pinned dependencies fix
+        # continue-on-error so the SARIF upload step below still runs on vulnerability findings;
+        # the "Report failed" step re-fails the job afterward when upload-sarif is set.
+        continue-on-error: ${{ inputs.upload-sarif }}
         uses: golang/govulncheck-action@3fa7bd9cee2cfdf3499a8803b226e43de7b7cdb4 # master 2026-02-28
         with:
           # Explicitly unset this input so the action respects go-version-file instead.
@@ -192,27 +196,8 @@ jobs:
           go-version-file: ${{ matrix.module-dir }}/go.mod
           go-package: ./...
           work-dir: ${{ matrix.module-dir }}
-
-      - name: Checkout repository for SARIF run
-        if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true && inputs.upload-sarif }}
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-
-      - name: Set up Go for SARIF run
-        if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true && inputs.upload-sarif }}
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
-        with:
-          go-version-file: ${{ matrix.module-dir }}/go.mod
-          cache-dependency-path: ${{ matrix.module-dir }}/go.sum
-
-      - name: Install govulncheck for SARIF run
-        if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true && inputs.upload-sarif }}
-        run: go install golang.org/x/vuln/cmd/govulncheck@latest
-
-      - name: Run govulncheck and generate SARIF
-        id: govulncheck-sarif
-        if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true && inputs.upload-sarif }}
-        continue-on-error: true
-        run: govulncheck -format sarif -C ${{ matrix.module-dir }} ./... > ${{ matrix.module-dir }}/govulncheck.sarif
+          output-format: ${{ inputs.upload-sarif && 'sarif' || 'text' }}
+          output-file: ${{ inputs.upload-sarif && format('{0}/govulncheck.sarif', matrix.module-dir) || '' }}
 
       - name: Upload govulncheck SARIF file for GitHub Advanced Security Dashboard
         if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true && inputs.upload-sarif && hashFiles(format('{0}/govulncheck.sarif', matrix.module-dir)) != '' }}
@@ -222,7 +207,7 @@ jobs:
           category: govulncheck-${{ matrix.module-dir }}
 
       - name: Report failed govulncheck SARIF run
-        if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true && inputs.upload-sarif && steps.govulncheck-sarif.outcome == 'failure' }}
+        if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true && inputs.upload-sarif && steps.govulncheck.outcome == 'failure' }}
         run: exit 1
 
   semgrep-scan:
