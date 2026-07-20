@@ -35,7 +35,6 @@ on:
         type: string
         default: 'high'
         description: Minimum vulnerability severity that causes Grype to fail the build (negligible, low, medium, high, critical)
-
       execute-dependabot-check:
         required: false
         type: boolean
@@ -87,6 +86,11 @@ on:
         type: string
         default: 'auto'
         description: 'Semgrep configuration to use (auto, p/security-audit, p/owasp-top-ten, etc.)'
+      semgrep-max-target-bytes:
+        required: false
+        type: number
+        default: 500000
+        description: 'Skip scanning files larger than this size (in bytes)'
 
       runs-on:
         required: false
@@ -273,11 +277,11 @@ jobs:
       - name: Perform Semgrep Analysis and Generate SARIF
         if: inputs.upload-sarif
         run: |
-          semgrep scan --config ${{ inputs.semgrep-config }} --max-target-bytes 500000 --sarif > semgrep.sarif
+          semgrep scan --config ${{ inputs.semgrep-config }} --max-target-bytes ${{ inputs.semgrep-max-target-bytes }} --sarif > semgrep.sarif
       - name: Perform Semgrep Analysis with CLI Output
         if: ${{ !inputs.upload-sarif }}
         run: |
-          semgrep scan --config ${{ inputs.semgrep-config }} --max-target-bytes 500000
+          semgrep scan --config ${{ inputs.semgrep-config }} --max-target-bytes ${{ inputs.semgrep-max-target-bytes }}
       - name: Upload SARIF file for GitHub Advanced Security Dashboard
         if: inputs.upload-sarif
         uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
