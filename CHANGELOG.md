@@ -1,5 +1,16 @@
 # Changelog
 
+## [7.0.0](https://github.com/cccteam/github-workflows/compare/v6.1.3...v7.0.0) (2026-07-22)
+
+
+### ⚠ BREAKING CHANGES
+
+* execute-trivy-scan has been removed entirely rather than kept as a backward-compatible alias for execute-grype-scan. Callers that still pass this input (true or false) will fail with an "Unexpected input(s)" error and must remove it, switching to execute-grype-scan if they need image scanning.
+
+### Features
+
+* golang-ci sarif uploads + migrate GH app auth to use client id ([#176](https://github.com/cccteam/github-workflows/issues/176)) ([97460a2](https://github.com/cccteam/github-workflows/commit/97460a2b1042f7ff0694ed1a7c61daea10471894))
+
 ## [6.1.3](https://github.com/cccteam/github-workflows/compare/v6.1.2...v6.1.3) (2026-07-15)
 
 
