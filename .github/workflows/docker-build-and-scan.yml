@@ -22,11 +22,6 @@ on:
         type: string
         default: '[]' # empty array
         description: Json-formatted array of strings to pass to the docker build command as build args. e.g. '["arg1", "arg2"]'
-      execute-trivy-scan:
-        required: false
-        type: boolean
-        default: false
-        description: '[DEPRECATED] Use execute-grype-scan. Kept for backward compatibility.'
       execute-grype-scan:
         required: false
         type: boolean
@@ -107,7 +102,7 @@ jobs:
           docker build $BUILD_ARGS -t $repo_name:latest -f ${{ inputs.dockerfile }} .
 
       - name: Run Grype vulnerability scanner
-        if: ${{ (inputs.execute-grype-scan || inputs.execute-trivy-scan) && !inputs.upload-sarif }}
+        if: ${{ inputs.execute-grype-scan && !inputs.upload-sarif }}
         uses: anchore/scan-action@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2 # v7.4.0
         with:
           image: '${{ env.REPO_NAME }}:latest'
@@ -117,7 +112,7 @@ jobs:
 
       - name: Run Grype vulnerability scanner and generate SARIF
         id: grype-sarif
-        if: ${{ (inputs.execute-grype-scan || inputs.execute-trivy-scan) && inputs.upload-sarif }}
+        if: ${{ inputs.execute-grype-scan && inputs.upload-sarif }}
         uses: anchore/scan-action@e1165082ffb1fe366ebaf02d8526e7c4989ea9d2 # v7.4.0
         with:
           image: '${{ env.REPO_NAME }}:latest'
@@ -126,7 +121,7 @@ jobs:
           output-format: 'sarif'
 
       - name: Upload Grype SARIF report to GitHub Advanced Security Dashboard
-        if: ${{ (inputs.execute-grype-scan || inputs.execute-trivy-scan) && inputs.upload-sarif }}
+        if: ${{ inputs.execute-grype-scan && inputs.upload-sarif }}
         uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
         with:
           sarif_file: ${{ steps.grype-sarif.outputs.sarif }}
