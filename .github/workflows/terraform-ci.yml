@@ -60,9 +60,12 @@ on:
         type: string
         default: ''
     secrets:
+      app_client_id:
+        description: GitHub App Client ID for authentication
+        required: false
       app_id:
-        description: GitHub App ID for authentication
-        required: true
+        description: '[DEPRECATED] Use app_client_id. Kept for backward compatibility.'
+        required: false
       app_pem:
         description: GitHub App private key for authentication
         required: true
@@ -102,7 +105,7 @@ jobs:
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         id: app-token
         with:
-          app-id: ${{ secrets.app_id }}
+          client-id: ${{ secrets.app_client_id || secrets.app_id }}
           private-key: ${{ secrets.app_pem }}
 
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -185,7 +188,6 @@ jobs:
           git-push: ${{ inputs.git_push }}
           git-push-user-name: github-actions[bot]
           git-push-user-email: github-actions[bot]@users.noreply.github.com
-          git-push-token: ${{ steps.app-token.outputs.token }}
 
   detect-changed-dirs:
     name: Detect Changed Terraform Directories

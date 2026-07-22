@@ -1,7 +1,6 @@
 # This reusable workflow can be used in repositories that include a Dockerfile to perform the following actions:
 #  - Lint the Docker file via 'hadolint'.
 #  - Build the Docker image.
-#  - Optionally scan the Docker image for vulnerabilities via the 'Trivy' scanner (disabled by default).
 #  - Optionally scan the Docker image for vulnerabilities via the 'Grype' scanner (disabled by default).
 #  - Optionally upload Grype scan results as a SARIF report to GitHub Advanced Security (disabled by default).
 #  - Optionally generate a Software Bill of Materials (SBOM) via 'Syft' (disabled by default).
@@ -23,26 +22,6 @@ on:
         type: string
         default: '[]' # empty array
         description: Json-formatted array of strings to pass to the docker build command as build args. e.g. '["arg1", "arg2"]'
-      execute-trivy-scan:
-        required: false
-        type: boolean
-        default: false
-        description: Execute Trivy vulnerability scanning of the Docker image
-      vuln-types:
-        required: false
-        type: string
-        default: 'os,library'
-        description: Comma-separated list of vulnerability types to scan for. e.g. 'os,library'
-      ignore-unfixed:
-        required: false
-        type: boolean
-        default: false
-        description: Ignore unfixed vulnerabilities
-      severity:
-        required: false
-        type: string
-        default: 'LOW,MEDIUM,HIGH,CRITICAL'
-        description: Comma-separated list of vulnerability severities to scan for. e.g. 'LOW,MEDIUM,HIGH,CRITICAL'
       execute-grype-scan:
         required: false
         type: boolean
@@ -117,22 +96,10 @@ jobs:
           echo "SBOM_ARTIFACT_NAME=sbom-${dockerfile_safe}" >> $GITHUB_ENV
 
       - name: Build docker image
-        id: build
         run: |
           repo_name=$(echo "${{ github.repository }}" | awk '{print tolower($0)}')
           echo "REPO_NAME=$repo_name" >> $GITHUB_ENV
           docker build $BUILD_ARGS -t $repo_name:latest -f ${{ inputs.dockerfile }} .
-
-      - name: Run Trivy vulnerability scanner
-        if: ${{ inputs.execute-trivy-scan }}
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with:
-          image-ref: '${{ env.REPO_NAME }}:latest'
-          format: 'table'
-          exit-code: '1'
-          ignore-unfixed: '${{ inputs.ignore-unfixed }}'
-          vuln-type: '${{ inputs.vuln-types }}'
-          severity: '${{ inputs.severity }}'
 
       - name: Run Grype vulnerability scanner
         if: ${{ inputs.execute-grype-scan && !inputs.upload-sarif }}
