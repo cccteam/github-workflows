@@ -78,7 +78,7 @@ jobs:
       contents: write
       pull-requests: write
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
@@ -108,7 +108,7 @@ jobs:
           client-id: ${{ secrets.app_client_id || secrets.app_id }}
           private-key: ${{ secrets.app_pem }}
 
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: steps.check-changes.outputs.has_changes == 'true'
         with:
           ref: ${{ github.event.pull_request.head.ref }}
@@ -199,7 +199,7 @@ jobs:
       has_changes: ${{ steps.detect.outputs.has_changes }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
@@ -240,7 +240,7 @@ jobs:
 
       - name: Checkout code
         if: needs.detect-changed-dirs.outputs.has_changes == 'true'
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
@@ -278,7 +278,7 @@ jobs:
 
       - name: Upload TFLint SARIF file
         if: needs.detect-changed-dirs.outputs.has_changes == 'true' && inputs.upload_sarif == true && hashFiles('/tmp/sarif/tflint-*.sarif') != ''
-        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+        uses: github/codeql-action/upload-sarif@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
         with:
           sarif_file: /tmp/sarif/tflint-*.sarif
           category: tflint
@@ -293,7 +293,7 @@ jobs:
       security-events: write
       actions: read
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
@@ -315,7 +315,7 @@ jobs:
 
       - name: Checkov GitHub Action
         if: steps.changed-files.outputs.has_files == 'true'
-        uses: bridgecrewio/checkov-action@a7683e7b72a04503521247973281ec8142e1ac1f # v12.3112.0
+        uses: bridgecrewio/checkov-action@7b972723c44fb3d256283fac96fae5d7c1894bb7 # v12.3114.0
         with:
           file: ${{ steps.changed-files.outputs.files }}
           output_format: ${{ inputs.upload_sarif == true && 'cli,sarif' || inputs.output_format }}
@@ -325,7 +325,7 @@ jobs:
 
       - name: Upload SARIF file
         if: inputs.upload_sarif == true && steps.changed-files.outputs.has_files == 'true' && hashFiles('results.sarif') != ''
-        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+        uses: github/codeql-action/upload-sarif@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
         with:
           sarif_file: results.sarif
           category: checkov
