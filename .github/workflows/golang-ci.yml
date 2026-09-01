@@ -66,7 +66,7 @@ jobs:
       module-dir: ${{ steps.set-modules.outputs.module-dir }}
       has-changes: ${{ steps.set-modules.outputs.has-changes }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - id: set-modules
@@ -96,11 +96,11 @@ jobs:
 
       - name: Check out code into the Go module directory
         if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true }}
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Go for app
         if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true }}
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: ${{ matrix.module-dir }}/go.mod
           cache-dependency-path: ${{ matrix.module-dir }}/go.sum
@@ -145,11 +145,11 @@ jobs:
 
       - name: Check out code into the Go module directory
         if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true }}
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Go for app
         if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true }}
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: ${{ matrix.module-dir }}/go.mod
           cache-dependency-path: ${{ matrix.module-dir }}/go.sum
@@ -189,7 +189,7 @@ jobs:
         # continue-on-error so the SARIF upload step below still runs on vulnerability findings;
         # the "Report failed" step re-fails the job afterward when upload-sarif is set.
         continue-on-error: ${{ inputs.upload-sarif }}
-        uses: golang/govulncheck-action@3fa7bd9cee2cfdf3499a8803b226e43de7b7cdb4 # master 2026-02-28
+        uses: golang/govulncheck-action@032d45514ae346b1db93c04b0c90b841c370344f # master 2026-02-28
         with:
           # Explicitly unset this input so the action respects go-version-file instead.
           go-version-input: ''
@@ -201,7 +201,7 @@ jobs:
 
       - name: Upload govulncheck SARIF file for GitHub Advanced Security Dashboard
         if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true && inputs.upload-sarif && hashFiles(format('{0}/govulncheck.sarif', matrix.module-dir)) != '' }}
-        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
         with:
           sarif_file: ${{ matrix.module-dir }}/govulncheck.sarif
           category: govulncheck-${{ matrix.module-dir }}
@@ -231,7 +231,7 @@ jobs:
 
       - name: Checkout repository
         if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true }}
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
@@ -256,7 +256,7 @@ jobs:
 
       - name: Upload SARIF file for GitHub Advanced Security Dashboard
         if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true && inputs.upload-sarif }}
-        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
         with:
           sarif_file: ${{ matrix.module-dir }}/semgrep.sarif
           category: semgrep-${{ matrix.module-dir }}
@@ -281,11 +281,11 @@ jobs:
 
       - name: Check out code into the Go module directory
         if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true }}
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Go for app
         if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true }}
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: ${{ matrix.module-dir }}/go.mod
           cache-dependency-path: ${{ matrix.module-dir }}/go.sum
@@ -306,7 +306,7 @@ jobs:
 
       - name: Upload golangci-lint SARIF file for GitHub Advanced Security Dashboard
         if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true && inputs.upload-sarif && hashFiles(format('{0}/golangci-lint.sarif', matrix.module-dir)) != '' }}
-        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
         with:
           sarif_file: ${{ matrix.module-dir }}/golangci-lint.sarif
           category: golangci-lint-${{ matrix.module-dir }}
