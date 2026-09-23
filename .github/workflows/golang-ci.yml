@@ -54,6 +54,11 @@ on:
         required: false
         type: string
         default: 'ubuntu-latest'
+      base-branch:
+        required: false
+        type: string
+        default: 'master'
+        description: 'Branch that changes are diffed against to decide which modules to check (e.g. main)'
 
 permissions: {}
 
@@ -70,11 +75,16 @@ jobs:
         with:
           fetch-depth: 0
       - id: set-modules
-        # compares the go modules from `release-please-config.json` in each repo to the directories with git diffs
+        # compares the go modules from `release-please-config.json` in each repo to the files changed since the base branch
+        env:
+          BASE_REF: refs/remotes/origin/${{ inputs.base-branch }}
         run: |
-          all_module_dirs=$(cat ${{ inputs.release-please-config-file }} 2>/dev/null | jq -csS --arg workingDir ${{ inputs.working-directory }} 'if length == 0 then ["\($workingDir)"] else ( ((.[0].packages | keys?) // []) | if length == 0 then ["\($workingDir)"] else map(if . == "." then "\($workingDir)" else "\($workingDir)/\(.)" end) end) end')
-          changed_module_dirs=$(jq -cnS --argjson packages $all_module_dirs --argjson changed_module_dirs $(git diff --name-only --line-prefix='./' refs/remotes/origin/master HEAD | awk -F "/*[^/]*/*$" '{ print ($1 == "." ? "." : $1); }' | cut -d "/" -f1-2 | sort | uniq | jq -ncRS '[inputs]') '$packages | map(select(. as $pkg | $changed_module_dirs | index($pkg)))' | awk '{ print ($1 == "[]" ? "[\".\"]" : $1); }')
-          has_changes=$(echo $all_module_dirs | jq -c --argjson changed_module_dirs "$changed_module_dirs" 'map(. as $dir | {key: $dir, value: ($changed_module_dirs | index($dir) != null)}) | from_entries')
+          set -euo pipefail
+          all_module_dirs=$({ cat ${{ inputs.release-please-config-file }} 2>/dev/null || true; } | jq -csS --arg workingDir ${{ inputs.working-directory }} 'if length == 0 then ["\($workingDir)"] else ( ((.[0].packages | keys?) // []) | if length == 0 then ["\($workingDir)"] else map(if . == "." then "\($workingDir)" else "\($workingDir)/\(.)" end) end) end')
+          # Fails loudly if the base branch doesn't exist, rather than reporting no changes and skipping every job.
+          changed_files=$(git diff --name-only "$BASE_REF" HEAD | jq -ncR '[inputs]')
+          # A module has changes when any changed file sits under its directory, at any depth. The root module always runs.
+          has_changes=$(jq -cn --argjson dirs "$all_module_dirs" --argjson files "$changed_files" '$dirs | map(. as $dir | ($dir | sub("^(\\./)+"; "") | sub("/+$"; "")) as $path | {key: $dir, value: ($path == "." or $path == "" or ($files | any(startswith($path + "/"))))}) | from_entries')
           echo "module-dir=$all_module_dirs" >> $GITHUB_OUTPUT
           echo "has-changes=$has_changes" >> $GITHUB_OUTPUT
           echo $has_changes
@@ -238,9 +248,9 @@ jobs:
       - name: Determine baseline commit
         id: baseline
         if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true }}
-        # Diffs against the merge-base with master so only findings introduced by this branch are reported,
+        # Diffs against the merge-base with the base branch so only findings introduced by this branch are reported,
         # instead of re-scanning the whole module on every run.
-        run: echo "sha=$(git merge-base refs/remotes/origin/master HEAD)" >> "$GITHUB_OUTPUT"
+        run: echo "sha=$(git merge-base refs/remotes/origin/${{ inputs.base-branch }} HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Perform Semgrep Analysis and Generate SARIF
         if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true && inputs.upload-sarif }}
