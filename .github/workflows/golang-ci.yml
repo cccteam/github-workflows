@@ -95,7 +95,7 @@ jobs:
       # The changed modules' go.sum files, one per line, keying setup-go's dependency cache.
       go-sum-paths: ${{ steps.set-modules.outputs.go-sum-paths }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - id: set-modules
@@ -142,10 +142,10 @@ jobs:
       contents: read
     steps:
       - name: Check out code
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: ${{ needs.detect-modules.outputs.first }}/go.mod
           cache-dependency-path: ${{ needs.detect-modules.outputs.go-sum-paths }}
@@ -192,10 +192,10 @@ jobs:
         build-tag: ${{ fromJson(inputs.build-tags) }}
     steps:
       - name: Check out code
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: ${{ needs.detect-modules.outputs.first }}/go.mod
           cache-dependency-path: ${{ needs.detect-modules.outputs.go-sum-paths }}
@@ -226,10 +226,10 @@ jobs:
       actions: read
     steps:
       - name: Check out code
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: ${{ needs.detect-modules.outputs.first }}/go.mod
           cache-dependency-path: ${{ needs.detect-modules.outputs.go-sum-paths }}
@@ -264,7 +264,7 @@ jobs:
 
       - name: Upload govulncheck SARIF files for GitHub Advanced Security Dashboard
         if: ${{ inputs.upload-sarif && hashFiles('.golang-ci/govulncheck/*.sarif') != '' }}
-        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         with:
           sarif_file: .golang-ci/govulncheck
           category: govulncheck
@@ -286,7 +286,7 @@ jobs:
       image: semgrep/semgrep
     steps:
       - name: Checkout repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
@@ -320,7 +320,7 @@ jobs:
 
       - name: Upload SARIF files for GitHub Advanced Security Dashboard
         if: ${{ inputs.upload-sarif && hashFiles('.golang-ci/semgrep/*.sarif') != '' }}
-        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         with:
           sarif_file: .golang-ci/semgrep
           category: semgrep
@@ -340,14 +340,14 @@ jobs:
         build-tag: ${{ fromJson(inputs.build-tags) }}
     steps:
       - name: Check out code
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Fetch origin/master for only-new-issues
         if: inputs.golangci-lint-only-new-issues
         run: git fetch --no-tags --unshallow origin master 2>/dev/null || git fetch --no-tags origin master
 
       - name: Set up Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: ${{ needs.detect-modules.outputs.first }}/go.mod
           cache-dependency-path: ${{ needs.detect-modules.outputs.go-sum-paths }}
@@ -397,7 +397,7 @@ jobs:
 
       - name: Upload golangci-lint SARIF files for GitHub Advanced Security Dashboard
         if: ${{ inputs.upload-sarif && hashFiles('.golang-ci/golangci-lint/*.sarif') != '' }}
-        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         with:
           sarif_file: .golang-ci/golangci-lint
           category: golangci-lint
