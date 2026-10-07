@@ -14,7 +14,7 @@ This repository provides a collection of reusable GitHub Actions workflow templa
 
 - **Golang CI Workflow**
   [`golang-ci.yml`](.github/workflows/golang-ci.yml):
-  Runs Go tests, builds, lints, and vulnerability checks for Go projects.
+  Runs Go tests, builds, lints, and vulnerability checks for Go projects. In a repository with several Go modules (the packages of `release-please-config.json`), only the modules the pull request changed are checked, in series inside one job per check, so the check names never carry a module. See [Golang CI required checks](#golang-ci-required-checks).
 
 - **Golang Security Scan**
   [`golang-security-scan.yml`](.github/workflows/golang-security-scan.yml):
@@ -65,18 +65,34 @@ To use a reusable workflow in your repository, create a workflow file in your `.
 ```yaml
 name: CI
 on:
-  push:
-    branches: [master]
   pull_request:
-    branches: [master]
 
 jobs:
-  ci:
-    uses: cccteam/github-workflows/.github/workflows/golang-ci.yml@v5.9.0
+  golang-ci:
+    uses: cccteam/github-workflows/.github/workflows/golang-ci.yml@v8.0.0
     with:
-      # Workflow-specific inputs here
-      go-version: '1.22'
+      build-tags: '["", "dev"]'
+      golangci-lint-version: 'v2.12.2'
 ```
+
+#### Golang CI required checks
+
+The workflow lists the Go modules the pull request changed (`detect-modules`), then runs each check once per workflow run, looping over the changed modules in series. Every module runs even when an earlier one failed, and the job fails at the end naming each failed module. An unchanged module takes no runner, and when nothing changed the checks after `detect-modules` are skipped and report success.
+
+Because the check names never carry a module, a ruleset requires the same names however many modules the repository holds. With the job id `golang-ci` and the build tags above, require:
+
+- `golang-ci / detect-modules`
+- `golang-ci / Check for go generate changes`
+- `golang-ci / Run tests and builds`
+- `golang-ci / Run tests and builds (dev)`
+- `golang-ci / Go Vulnerability Check`
+- `golang-ci / Run Semgrep Scan`
+- `golang-ci / Run golangci-lint`
+- `golang-ci / Run golangci-lint (dev)`
+
+`detect-modules` must be among them: a job skipped by its condition counts as a success for a required check, and the dependents of a failed job are skipped, so a failed detection would otherwise let a pull request through unchecked.
+
+Before v8.0.0 the checks were one job per module (`Run tests and builds (./pkg)`, `Run golangci-lint (dev, ./pkg)`, ...), every module's job ran on every pull request, and a ruleset had to name each module's jobs. Moving to v8.0.0 means replacing those names in the ruleset with the list above.
 
 ### Angular Example
 

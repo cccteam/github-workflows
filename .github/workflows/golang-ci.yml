@@ -1,10 +1,33 @@
 # This Continuous Integration (CI) workflow template can be used in repositories that contain Go code.
 #
 # The following jobs are included:
+#  * detect-modules: Lists the Go modules the change touches
 #  * go-generate-diff: Checks if files generated via 'go generate' are up-to-date
 #  * tests-and-builds: Runs all tests and builds the code
 #  * govulncheck: Checks for known vulnerabilities in the Go dependencies
+#  * semgrep-scan: Runs Semgrep
 #  * linter: Runs golangci-lint
+#
+# The modules are the packages of release-please-config.json (the working directory alone when
+# there is no such file), and a module is changed when the diff against origin/master touches a
+# file under it; a file under several modules belongs to the deepest one. Every job after
+# detect-modules runs once (once per build tag for tests-and-builds and linter) and loops over
+# the changed modules, so an unchanged module takes no runner, and the check names carry no
+# module, so a ruleset requires the same names however many modules the repository holds:
+#
+#   golang-ci / detect-modules
+#   golang-ci / Check for go generate changes
+#   golang-ci / Run tests and builds        (one per build tag, e.g. "Run tests and builds (dev)")
+#   golang-ci / Go Vulnerability Check
+#   golang-ci / Run Semgrep Scan
+#   golang-ci / Run golangci-lint           (one per build tag, e.g. "Run golangci-lint (dev)")
+#
+# where "golang-ci" is the job id the calling workflow gives this one. detect-modules must be
+# among the required checks: a job skipped by its condition counts as a success for a required
+# check, and the dependents of a failed job are skipped, so a failed detection would otherwise
+# let a pull request through unchecked. When no module changed, the jobs after detect-modules
+# are skipped and report success. Inside a job the changed modules run in series, every module
+# runs even when an earlier one failed, and the job fails at the end naming each failed module.
 #
 # NOTE: Certain inputs are required, as detailed in the "inputs" section below.
 
@@ -63,63 +86,92 @@ jobs:
     permissions:
       contents: read
     outputs:
-      module-dir: ${{ steps.set-modules.outputs.module-dir }}
-      has-changes: ${{ steps.set-modules.outputs.has-changes }}
+      # 'true' when at least one module changed; the other jobs run only then.
+      any: ${{ steps.set-modules.outputs.any }}
+      # The changed module directories, space-separated for the shell loops.
+      changed: ${{ steps.set-modules.outputs.changed }}
+      # The first changed module directory; its go.mod picks the Go toolchain to set up.
+      first: ${{ steps.set-modules.outputs.first }}
+      # The changed modules' go.sum files, one per line, keying setup-go's dependency cache.
+      go-sum-paths: ${{ steps.set-modules.outputs.go-sum-paths }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
       - id: set-modules
-        # compares the go modules from `release-please-config.json` in each repo to the directories with git diffs
+        env:
+          CONFIG: ${{ inputs.release-please-config-file }}
+          WORKING_DIR: ${{ inputs.working-directory }}
         run: |
-          all_module_dirs=$(cat ${{ inputs.release-please-config-file }} 2>/dev/null | jq -csS --arg workingDir ${{ inputs.working-directory }} 'if length == 0 then ["\($workingDir)"] else ( ((.[0].packages | keys?) // []) | if length == 0 then ["\($workingDir)"] else map(if . == "." then "\($workingDir)" else "\($workingDir)/\(.)" end) end) end')
-          changed_module_dirs=$(jq -cnS --argjson packages $all_module_dirs --argjson changed_module_dirs $(git diff --name-only --line-prefix='./' refs/remotes/origin/master HEAD | awk -F "/*[^/]*/*$" '{ print ($1 == "." ? "." : $1); }' | cut -d "/" -f1-2 | sort | uniq | jq -ncRS '[inputs]') '$packages | map(select(. as $pkg | $changed_module_dirs | index($pkg)))' | awk '{ print ($1 == "[]" ? "[\".\"]" : $1); }')
-          has_changes=$(echo $all_module_dirs | jq -c --argjson changed_module_dirs "$changed_module_dirs" 'map(. as $dir | {key: $dir, value: ($changed_module_dirs | index($dir) != null)}) | from_entries')
-          echo "module-dir=$all_module_dirs" >> $GITHUB_OUTPUT
-          echo "has-changes=$has_changes" >> $GITHUB_OUTPUT
-          echo $has_changes
+          if [ -f "$CONFIG" ]; then
+            modules=$(jq -c --arg wd "$WORKING_DIR" '
+              [.packages // {} | keys[]]
+              | if length == 0 then ["."] else . end
+              | map(if . == "." then $wd elif $wd == "." then . else "\($wd)/\(.)" end)' "$CONFIG")
+          else
+            modules=$(jq -cn --arg wd "$WORKING_DIR" '[$wd]')
+          fi
+          git diff --name-only refs/remotes/origin/master HEAD > "$RUNNER_TEMP/changed-files"
+          changed=$(jq -c --rawfile files "$RUNNER_TEMP/changed-files" '
+            . as $modules
+            | ($files | split("\n") | map(select(. != ""))) as $files
+            | [ $files[]
+                | . as $f
+                | [$modules[] | . as $m | select($m == "." or ($f | startswith($m + "/")))]
+                | sort_by(length)
+                | last
+                | select(. != null) ]
+            | unique' <<<"$modules")
+          {
+            echo "any=$(jq -r 'if length > 0 then "true" else "false" end' <<<"$changed")"
+            echo "changed=$(jq -r 'join(" ")' <<<"$changed")"
+            echo "first=$(jq -r '.[0] // ""' <<<"$changed")"
+            echo "go-sum-paths<<GO_SUM_PATHS"
+            jq -r 'map(. + "/go.sum") | join("\n")' <<<"$changed"
+            echo "GO_SUM_PATHS"
+          } >> "$GITHUB_OUTPUT"
+          echo "modules: $(jq -r 'join(" ")' <<<"$modules")"
+          echo "changed: $(jq -r 'if length == 0 then "(none)" else join(" ") end' <<<"$changed")"
 
   go-generate-diff:
     name: Check for go generate changes
     needs: detect-modules
+    if: needs.detect-modules.outputs.any == 'true'
     runs-on: ${{ inputs.runs-on }}
     permissions:
       contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        module-dir: ${{ fromJson(needs.detect-modules.outputs.module-dir) }}
     steps:
-      - name: Skip if no changes
-        if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == false }}
-        run: echo "No changes detected in ${{ matrix.module-dir }}. Skipping go generate."
-
-      - name: Check out code into the Go module directory
-        if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true }}
+      - name: Check out code
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      - name: Set up Go for app
-        if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true }}
+      - name: Set up Go
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
-          go-version-file: ${{ matrix.module-dir }}/go.mod
-          cache-dependency-path: ${{ matrix.module-dir }}/go.sum
+          go-version-file: ${{ needs.detect-modules.outputs.first }}/go.mod
+          cache-dependency-path: ${{ needs.detect-modules.outputs.go-sum-paths }}
 
       - name: Install mockgen
-        if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true }}
         run: go install go.uber.org/mock/mockgen@latest
 
       - name: Install Bun
-        if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true }}
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
 
-      - name: Run go generate
-        if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true }}
-        run: go generate ./...
-        working-directory: ${{ matrix.module-dir }}
+      - name: Run go generate in each changed module
+        env:
+          MODULES: ${{ needs.detect-modules.outputs.changed }}
+          # Lets go fetch a changed module's own toolchain when it is newer than the one set up.
+          GOTOOLCHAIN: auto
+        run: |
+          failed=""
+          for dir in $MODULES; do
+            echo "::group::$dir"
+            (cd "$dir" && go generate ./...) || failed="$failed $dir"
+            echo "::endgroup::"
+          done
+          for dir in $failed; do echo "::error::$dir: go generate failed"; done
+          test -z "$failed"
 
       - name: Check for go generate changes
-        if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true }}
         run: |
           if [[ -n "$(git status --porcelain)" ]]; then
             echo "Changes were found after running go generate. Please run it and commit the changes."
@@ -128,8 +180,9 @@ jobs:
           fi
 
   tests-and-builds:
-    name: Run tests and builds
+    name: Run tests and builds${{ matrix.build-tag != '' && format(' ({0})', matrix.build-tag) || '' }}
     needs: detect-modules
+    if: needs.detect-modules.outputs.any == 'true'
     runs-on: ${{ inputs.runs-on }}
     permissions:
       contents: read
@@ -137,82 +190,93 @@ jobs:
       fail-fast: false
       matrix:
         build-tag: ${{ fromJson(inputs.build-tags) }}
-        module-dir: ${{ fromJson(needs.detect-modules.outputs.module-dir) }}
     steps:
-      - name: Skip if no changes
-        if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == false }}
-        run: echo "No changes detected in ${{ matrix.module-dir }}. Skipping build and tests."
-
-      - name: Check out code into the Go module directory
-        if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true }}
+      - name: Check out code
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      - name: Set up Go for app
-        if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true }}
+      - name: Set up Go
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
-          go-version-file: ${{ matrix.module-dir }}/go.mod
-          cache-dependency-path: ${{ matrix.module-dir }}/go.sum
+          go-version-file: ${{ needs.detect-modules.outputs.first }}/go.mod
+          cache-dependency-path: ${{ needs.detect-modules.outputs.go-sum-paths }}
 
-      - name: Run tests with race detection
-        if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true }}
-        run: go test ${{ matrix.build-tag != '' && format('-tags {0}', matrix.build-tag) || '' }} -v -race ./...
-        working-directory: ${{ matrix.module-dir }}
-
-      - name: Run build
-        if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true }}
-        run: go build ${{ matrix.build-tag != '' && format('-tags {0}', matrix.build-tag) || '' }} ./...
-        working-directory: ${{ matrix.module-dir }}
+      - name: Run tests with race detection and build each changed module
+        env:
+          MODULES: ${{ needs.detect-modules.outputs.changed }}
+          TAGS: ${{ matrix.build-tag != '' && format('-tags {0}', matrix.build-tag) || '' }}
+          GOTOOLCHAIN: auto
+        run: |
+          failed=""
+          for dir in $MODULES; do
+            echo "::group::$dir"
+            (cd "$dir" && go test $TAGS -v -race ./... && go build $TAGS ./...) || failed="$failed $dir"
+            echo "::endgroup::"
+          done
+          for dir in $failed; do echo "::error::$dir: tests or build failed"; done
+          test -z "$failed"
 
   govulncheck:
     name: Go Vulnerability Check
     needs: detect-modules
+    if: needs.detect-modules.outputs.any == 'true'
     runs-on: ${{ inputs.runs-on }}
     permissions:
       contents: read
       security-events: write
       actions: read
-    strategy:
-      fail-fast: false
-      matrix:
-        module-dir: ${{ fromJson(needs.detect-modules.outputs.module-dir) }}
     steps:
-      - name: Skip if no changes
-        if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == false }}
-        run: echo "No changes detected in ${{ matrix.module-dir }}. Skipping vuln check."
+      - name: Check out code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      - name: govulncheck ${{ matrix.module-dir }}
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: ${{ needs.detect-modules.outputs.first }}/go.mod
+          cache-dependency-path: ${{ needs.detect-modules.outputs.go-sum-paths }}
+
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      - name: govulncheck each changed module
         id: govulncheck
-        if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true }}
-        # NOTE: Repo checkout and go setup are handled within 'govulncheck-action'
-        # Pinned to master commit because a release has not been cut with the SHA-pinned dependencies fix
         # continue-on-error so the SARIF upload step below still runs on vulnerability findings;
         # the "Report failed" step re-fails the job afterward when upload-sarif is set.
         continue-on-error: ${{ inputs.upload-sarif }}
-        uses: golang/govulncheck-action@3fa7bd9cee2cfdf3499a8803b226e43de7b7cdb4 # master 2026-02-28
-        with:
-          # Explicitly unset this input so the action respects go-version-file instead.
-          go-version-input: ''
-          go-version-file: ${{ matrix.module-dir }}/go.mod
-          go-package: ./...
-          work-dir: ${{ matrix.module-dir }}
-          output-format: ${{ inputs.upload-sarif && 'sarif' || 'text' }}
-          output-file: ${{ inputs.upload-sarif && format('{0}/govulncheck.sarif', matrix.module-dir) || '' }}
+        env:
+          MODULES: ${{ needs.detect-modules.outputs.changed }}
+          GOTOOLCHAIN: auto
+          # One SARIF file per module under the workspace, where hashFiles can see them; empty when not uploading.
+          SARIF_DIR: ${{ inputs.upload-sarif && format('{0}/.golang-ci/govulncheck', github.workspace) || '' }}
+        run: |
+          failed=""
+          [ -z "$SARIF_DIR" ] || mkdir -p "$SARIF_DIR"
+          for dir in $MODULES; do
+            echo "::group::$dir"
+            if [ -n "$SARIF_DIR" ]; then
+              (cd "$dir" && govulncheck -format sarif ./... > "$SARIF_DIR/$(echo "$dir" | tr '/.' '__').sarif") || failed="$failed $dir"
+            else
+              (cd "$dir" && govulncheck ./...) || failed="$failed $dir"
+            fi
+            echo "::endgroup::"
+          done
+          for dir in $failed; do echo "::error::$dir: govulncheck failed"; done
+          test -z "$failed"
 
-      - name: Upload govulncheck SARIF file for GitHub Advanced Security Dashboard
-        if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true && inputs.upload-sarif && hashFiles(format('{0}/govulncheck.sarif', matrix.module-dir)) != '' }}
+      - name: Upload govulncheck SARIF files for GitHub Advanced Security Dashboard
+        if: ${{ inputs.upload-sarif && hashFiles('.golang-ci/govulncheck/*.sarif') != '' }}
         uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
         with:
-          sarif_file: ${{ matrix.module-dir }}/govulncheck.sarif
-          category: govulncheck-${{ matrix.module-dir }}
+          sarif_file: .golang-ci/govulncheck
+          category: govulncheck
 
       - name: Report failed govulncheck SARIF run
-        if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true && inputs.upload-sarif && steps.govulncheck.outcome == 'failure' }}
+        if: ${{ inputs.upload-sarif && steps.govulncheck.outcome == 'failure' }}
         run: exit 1
 
   semgrep-scan:
     name: Run Semgrep Scan
     needs: detect-modules
+    if: needs.detect-modules.outputs.any == 'true'
     runs-on: ${{ inputs.runs-on }}
     permissions:
       security-events: write
@@ -220,50 +284,51 @@ jobs:
       actions: read
     container:
       image: semgrep/semgrep
-    strategy:
-      fail-fast: false
-      matrix:
-        module-dir: ${{ fromJson(needs.detect-modules.outputs.module-dir) }}
     steps:
-      - name: Skip if no changes
-        if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == false }}
-        run: echo "No changes detected in ${{ matrix.module-dir }}. Skipping Semgrep scan."
-
       - name: Checkout repository
-        if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true }}
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
 
       - name: Determine baseline commit
         id: baseline
-        if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true }}
         # Diffs against the merge-base with master so only findings introduced by this branch are reported,
         # instead of re-scanning the whole module on every run.
         run: echo "sha=$(git merge-base refs/remotes/origin/master HEAD)" >> "$GITHUB_OUTPUT"
 
-      - name: Perform Semgrep Analysis and Generate SARIF
-        if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true && inputs.upload-sarif }}
+      - name: Perform Semgrep Analysis on each changed module
+        env:
+          MODULES: ${{ needs.detect-modules.outputs.changed }}
+          SEMGREP_CONFIG: ${{ inputs.semgrep-config }}
+          MAX_TARGET_BYTES: ${{ inputs.semgrep-max-target-bytes }}
+          BASELINE: ${{ steps.baseline.outputs.sha }}
+          SARIF_DIR: ${{ inputs.upload-sarif && format('{0}/.golang-ci/semgrep', github.workspace) || '' }}
         run: |
-          cd ${{ matrix.module-dir }}
-          semgrep ci --config ${{ inputs.semgrep-config }} --baseline-commit=${{ steps.baseline.outputs.sha }} --max-target-bytes ${{ inputs.semgrep-max-target-bytes }} --sarif > semgrep.sarif
+          failed=""
+          [ -z "$SARIF_DIR" ] || mkdir -p "$SARIF_DIR"
+          for dir in $MODULES; do
+            echo "::group::$dir"
+            if [ -n "$SARIF_DIR" ]; then
+              (cd "$dir" && semgrep ci --config "$SEMGREP_CONFIG" --baseline-commit="$BASELINE" --max-target-bytes "$MAX_TARGET_BYTES" --sarif > "$SARIF_DIR/$(echo "$dir" | tr '/.' '__').sarif") || failed="$failed $dir"
+            else
+              (cd "$dir" && semgrep ci --config "$SEMGREP_CONFIG" --baseline-commit="$BASELINE" --max-target-bytes "$MAX_TARGET_BYTES") || failed="$failed $dir"
+            fi
+            echo "::endgroup::"
+          done
+          for dir in $failed; do echo "::error::$dir: semgrep failed"; done
+          test -z "$failed"
 
-      - name: Perform Semgrep Analysis with CLI Output
-        if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true && !inputs.upload-sarif }}
-        run: |
-          cd ${{ matrix.module-dir }}
-          semgrep ci --config ${{ inputs.semgrep-config }} --baseline-commit=${{ steps.baseline.outputs.sha }} --max-target-bytes ${{ inputs.semgrep-max-target-bytes }}
-
-      - name: Upload SARIF file for GitHub Advanced Security Dashboard
-        if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true && inputs.upload-sarif }}
+      - name: Upload SARIF files for GitHub Advanced Security Dashboard
+        if: ${{ inputs.upload-sarif && hashFiles('.golang-ci/semgrep/*.sarif') != '' }}
         uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
         with:
-          sarif_file: ${{ matrix.module-dir }}/semgrep.sarif
-          category: semgrep-${{ matrix.module-dir }}
+          sarif_file: .golang-ci/semgrep
+          category: semgrep
 
   linter:
-    name: Run golangci-lint
+    name: Run golangci-lint${{ matrix.build-tag != '' && format(' ({0})', matrix.build-tag) || '' }}
     needs: detect-modules
+    if: needs.detect-modules.outputs.any == 'true'
     runs-on: ${{ inputs.runs-on }}
     permissions:
       contents: read
@@ -273,44 +338,70 @@ jobs:
       fail-fast: false
       matrix:
         build-tag: ${{ fromJson(inputs.build-tags) }}
-        module-dir: ${{ fromJson(needs.detect-modules.outputs.module-dir) }}
     steps:
-      - name: Skip if no changes
-        if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == false }}
-        run: echo "No changes detected in ${{ matrix.module-dir }}. Skipping linter."
-
-      - name: Check out code into the Go module directory
-        if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true }}
+      - name: Check out code
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      - name: Set up Go for app
-        if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true }}
+      - name: Fetch origin/master for only-new-issues
+        if: inputs.golangci-lint-only-new-issues
+        run: git fetch --no-tags --unshallow origin master 2>/dev/null || git fetch --no-tags origin master
+
+      - name: Set up Go
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
-          go-version-file: ${{ matrix.module-dir }}/go.mod
-          cache-dependency-path: ${{ matrix.module-dir }}/go.sum
+          go-version-file: ${{ needs.detect-modules.outputs.first }}/go.mod
+          cache-dependency-path: ${{ needs.detect-modules.outputs.go-sum-paths }}
 
-      - name: golangci-lint ${{ matrix.module-dir }}
-        id: golangci-lint
-        if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true }}
-        # continue-on-error so the SARIF upload step below still runs on lint failures;
-        # the "Report failed" step re-fails the job afterward when upload-sarif is set.
-        continue-on-error: ${{ inputs.upload-sarif }}
+      - name: Install golangci-lint
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
           version: ${{ inputs.golangci-lint-version }}
-          args: --timeout ${{ inputs.golangci-lint-timeout }} --verbose ${{ matrix.build-tag != '' && format('--build-tags {0}', matrix.build-tag) || '' }} ${{ inputs.upload-sarif && '--output.sarif.path=golangci-lint.sarif' || '' }}
-          # Show only new issues if it's a pull request
-          only-new-issues: ${{ inputs.golangci-lint-only-new-issues }}
-          working-directory: ${{ matrix.module-dir }}
+          install-only: true
 
-      - name: Upload golangci-lint SARIF file for GitHub Advanced Security Dashboard
-        if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true && inputs.upload-sarif && hashFiles(format('{0}/golangci-lint.sarif', matrix.module-dir)) != '' }}
+      - name: Restore the golangci-lint analysis cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/golangci-lint
+          key: golangci-lint-${{ runner.os }}-${{ matrix.build-tag }}-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            golangci-lint-${{ runner.os }}-${{ matrix.build-tag }}-
+
+      - name: golangci-lint each changed module
+        id: golangci-lint
+        # continue-on-error so the SARIF upload step below still runs on lint failures;
+        # the "Report failed" step re-fails the job afterward when upload-sarif is set.
+        continue-on-error: ${{ inputs.upload-sarif }}
+        env:
+          MODULES: ${{ needs.detect-modules.outputs.changed }}
+          GOTOOLCHAIN: auto
+          TIMEOUT: ${{ inputs.golangci-lint-timeout }}
+          BUILD_TAGS: ${{ matrix.build-tag != '' && format('--build-tags {0}', matrix.build-tag) || '' }}
+          ONLY_NEW_ISSUES: ${{ inputs.golangci-lint-only-new-issues }}
+          SARIF_DIR: ${{ inputs.upload-sarif && format('{0}/.golang-ci/golangci-lint', github.workspace) || '' }}
+        run: |
+          failed=""
+          [ -z "$SARIF_DIR" ] || mkdir -p "$SARIF_DIR"
+          new_from=""
+          if [ "$ONLY_NEW_ISSUES" = "true" ]; then
+            new_from="--new-from-rev=$(git merge-base origin/master HEAD)"
+          fi
+          for dir in $MODULES; do
+            echo "::group::$dir"
+            sarif=""
+            [ -z "$SARIF_DIR" ] || sarif="--output.sarif.path=$SARIF_DIR/$(echo "$dir" | tr '/.' '__').sarif"
+            (cd "$dir" && golangci-lint run --timeout "$TIMEOUT" --verbose $BUILD_TAGS $new_from $sarif) || failed="$failed $dir"
+            echo "::endgroup::"
+          done
+          for dir in $failed; do echo "::error::$dir: golangci-lint failed"; done
+          test -z "$failed"
+
+      - name: Upload golangci-lint SARIF files for GitHub Advanced Security Dashboard
+        if: ${{ inputs.upload-sarif && hashFiles('.golang-ci/golangci-lint/*.sarif') != '' }}
         uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
         with:
-          sarif_file: ${{ matrix.module-dir }}/golangci-lint.sarif
-          category: golangci-lint-${{ matrix.module-dir }}
+          sarif_file: .golang-ci/golangci-lint
+          category: golangci-lint
 
       - name: Report failed golangci-lint SARIF run
-        if: ${{ fromJson(needs.detect-modules.outputs.has-changes)[matrix.module-dir] == true && inputs.upload-sarif && steps.golangci-lint.outcome == 'failure' }}
+        if: ${{ inputs.upload-sarif && steps.golangci-lint.outcome == 'failure' }}
         run: exit 1
