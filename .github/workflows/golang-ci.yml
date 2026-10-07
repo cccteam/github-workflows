@@ -9,8 +9,10 @@
 #  * linter: Runs golangci-lint
 #
 # The modules are the packages of release-please-config.json (the working directory alone when
-# there is no such file), and a module is changed when the diff against origin/master touches a
-# file under it; a file under several modules belongs to the deepest one. Every job after
+# there is no such file), and a module is changed when the diff against the base branch touches a
+# file under it; a file under several modules belongs to the deepest one. The base branch is the
+# pull request's base (the repository's default branch for other events) unless the base-branch
+# input names another. Every job after
 # detect-modules runs once (once per build tag for tests-and-builds and linter) and loops over
 # the changed modules, so an unchanged module takes no runner, and the check names carry no
 # module, so a ruleset requires the same names however many modules the repository holds:
@@ -77,6 +79,11 @@ on:
         required: false
         type: string
         default: 'ubuntu-latest'
+      base-branch:
+        required: false
+        type: string
+        default: ''
+        description: 'Branch the change is diffed against to decide which modules to check. Empty, the default, means the pull request''s base branch, or the repository''s default branch for other events.'
 
 permissions: {}
 
@@ -86,6 +93,8 @@ jobs:
     permissions:
       contents: read
     outputs:
+      # The branch the change was diffed against, as resolved from the input or the event.
+      base: ${{ steps.set-modules.outputs.base }}
       # 'true' when at least one module changed; the other jobs run only then.
       any: ${{ steps.set-modules.outputs.any }}
       # The changed module directories, space-separated for the shell loops.
@@ -102,7 +111,11 @@ jobs:
         env:
           CONFIG: ${{ inputs.release-please-config-file }}
           WORKING_DIR: ${{ inputs.working-directory }}
+          BASE_INPUT: ${{ inputs.base-branch }}
+          PR_BASE: ${{ github.base_ref }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
+          base="${BASE_INPUT:-${PR_BASE:-$DEFAULT_BRANCH}}"
           if [ -f "$CONFIG" ]; then
             modules=$(jq -c --arg wd "$WORKING_DIR" '
               [.packages // {} | keys[]]
@@ -111,7 +124,9 @@ jobs:
           else
             modules=$(jq -cn --arg wd "$WORKING_DIR" '[$wd]')
           fi
-          git diff --name-only refs/remotes/origin/master HEAD > "$RUNNER_TEMP/changed-files"
+          # A base that does not exist fails this step, and the step is a required check, rather than
+          # reporting no changes and letting the pull request through unchecked.
+          git diff --name-only "refs/remotes/origin/$base" HEAD > "$RUNNER_TEMP/changed-files"
           changed=$(jq -c --rawfile files "$RUNNER_TEMP/changed-files" '
             . as $modules
             | ($files | split("\n") | map(select(. != ""))) as $files
@@ -123,6 +138,7 @@ jobs:
                 | select(. != null) ]
             | unique' <<<"$modules")
           {
+            echo "base=$base"
             echo "any=$(jq -r 'if length > 0 then "true" else "false" end' <<<"$changed")"
             echo "changed=$(jq -r 'join(" ")' <<<"$changed")"
             echo "first=$(jq -r '.[0] // ""' <<<"$changed")"
@@ -130,6 +146,7 @@ jobs:
             jq -r 'map(. + "/go.sum") | join("\n")' <<<"$changed"
             echo "GO_SUM_PATHS"
           } >> "$GITHUB_OUTPUT"
+          echo "base: $base"
           echo "modules: $(jq -r 'join(" ")' <<<"$modules")"
           echo "changed: $(jq -r 'if length == 0 then "(none)" else join(" ") end' <<<"$changed")"
 
@@ -292,9 +309,11 @@ jobs:
 
       - name: Determine baseline commit
         id: baseline
-        # Diffs against the merge-base with master so only findings introduced by this branch are reported,
-        # instead of re-scanning the whole module on every run.
-        run: echo "sha=$(git merge-base refs/remotes/origin/master HEAD)" >> "$GITHUB_OUTPUT"
+        # Diffs against the merge-base with the base branch so only findings introduced by this branch are
+        # reported, instead of re-scanning the whole module on every run.
+        env:
+          BASE: ${{ needs.detect-modules.outputs.base }}
+        run: echo "sha=$(git merge-base "refs/remotes/origin/$BASE" HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Perform Semgrep Analysis on each changed module
         env:
@@ -342,9 +361,11 @@ jobs:
       - name: Check out code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Fetch origin/master for only-new-issues
+      - name: Fetch the base branch for only-new-issues
         if: inputs.golangci-lint-only-new-issues
-        run: git fetch --no-tags --unshallow origin master 2>/dev/null || git fetch --no-tags origin master
+        env:
+          BASE: ${{ needs.detect-modules.outputs.base }}
+        run: git fetch --no-tags --unshallow origin "$BASE" 2>/dev/null || git fetch --no-tags origin "$BASE"
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -377,13 +398,14 @@ jobs:
           TIMEOUT: ${{ inputs.golangci-lint-timeout }}
           BUILD_TAGS: ${{ matrix.build-tag != '' && format('--build-tags {0}', matrix.build-tag) || '' }}
           ONLY_NEW_ISSUES: ${{ inputs.golangci-lint-only-new-issues }}
+          BASE: ${{ needs.detect-modules.outputs.base }}
           SARIF_DIR: ${{ inputs.upload-sarif && format('{0}/.golang-ci/golangci-lint', github.workspace) || '' }}
         run: |
           failed=""
           [ -z "$SARIF_DIR" ] || mkdir -p "$SARIF_DIR"
           new_from=""
           if [ "$ONLY_NEW_ISSUES" = "true" ]; then
-            new_from="--new-from-rev=$(git merge-base origin/master HEAD)"
+            new_from="--new-from-rev=$(git merge-base "origin/$BASE" HEAD)"
           fi
           for dir in $MODULES; do
             echo "::group::$dir"

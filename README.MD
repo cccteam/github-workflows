@@ -77,7 +77,7 @@ jobs:
 
 #### Golang CI required checks
 
-The workflow lists the Go modules the pull request changed (`detect-modules`), then runs each check once per workflow run, looping over the changed modules in series. Every module runs even when an earlier one failed, and the job fails at the end naming each failed module. An unchanged module takes no runner, and when nothing changed the checks after `detect-modules` are skipped and report success.
+The workflow lists the Go modules the pull request changed (`detect-modules`, diffing against the pull request's base branch, or the branch the `base-branch` input names), then runs each check once per workflow run, looping over the changed modules in series. Every module runs even when an earlier one failed, and the job fails at the end naming each failed module. An unchanged module takes no runner, and when nothing changed the checks after `detect-modules` are skipped and report success.
 
 Because the check names never carry a module, a ruleset requires the same names however many modules the repository holds. With the job id `golang-ci` and the build tags above, require:
 
