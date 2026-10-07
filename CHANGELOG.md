@@ -1,5 +1,16 @@
 # Changelog
 
+## [8.0.0](https://github.com/cccteam/github-workflows/compare/v7.0.0...v8.0.0) (2026-10-07)
+
+
+### ⚠ BREAKING CHANGES
+
+* the check names lose the module. A ruleset that required "golang-ci / Run tests and builds (./pkg)" and the like must require instead golang-ci / detect-modules, Check for go generate changes, Run tests and builds[ (tag)], Go Vulnerability Check, Run Semgrep Scan and Run golangci-lint[ (tag)]. detect-modules must be required: a skipped job counts as a success for a required check, and the dependents of a failed job are skipped.
+
+### Features
+
+* golang-ci runs one job per check over the changed modules ([#182](https://github.com/cccteam/github-workflows/issues/182)) ([7252de2](https://github.com/cccteam/github-workflows/commit/7252de2b06cde642b90411740b9ccf51261315b3))
+
 ## [7.0.0](https://github.com/cccteam/github-workflows/compare/v6.1.3...v7.0.0) (2026-07-22)
 
 
