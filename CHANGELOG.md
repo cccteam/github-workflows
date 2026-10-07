@@ -1,5 +1,12 @@
 # Changelog
 
+## [8.1.0](https://github.com/cccteam/github-workflows/compare/v8.0.0...v8.1.0) (2026-10-07)
+
+
+### Features
+
+* **golang-ci:** diff against the pull request's base branch, or the branch base-branch names ([#180](https://github.com/cccteam/github-workflows/issues/180)) ([cb75608](https://github.com/cccteam/github-workflows/commit/cb75608341769761844e449f5987767b739d1ee6))
+
 ## [8.0.0](https://github.com/cccteam/github-workflows/compare/v7.0.0...v8.0.0) (2026-10-07)
 
 
