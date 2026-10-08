@@ -295,6 +295,21 @@ jobs:
           go-version-file: ${{ needs.detect-modules.outputs.first }}/go.mod
           cache: false
 
+      - name: Name the cache lineage
+        # A cache key may not contain a comma, and a build tag may ("skipAuth,insecurecookie"),
+        # so the leg's name in the key joins its tags with "+".
+        id: lineage
+        env:
+          JOB: golang-ci-tests
+          TAG: ${{ matrix.build-tag }}
+          OS: ${{ runner.os }}
+          GO_SUM_HASH: ${{ needs.detect-modules.outputs.go-sum-hash }}
+        run: |
+          {
+            echo "lineage=$JOB-${TAG//,/+}-$OS"
+            echo "prefix=$JOB-${TAG//,/+}-$OS-$GO_SUM_HASH"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Restore the Go caches
         id: go-cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -302,10 +317,10 @@ jobs:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: golang-ci-tests-${{ matrix.build-tag }}-${{ runner.os }}-${{ needs.detect-modules.outputs.go-sum-hash }}-${{ github.sha }}
+          key: ${{ steps.lineage.outputs.prefix }}-${{ github.sha }}
           restore-keys: |
-            golang-ci-tests-${{ matrix.build-tag }}-${{ runner.os }}-${{ needs.detect-modules.outputs.go-sum-hash }}-
-            golang-ci-tests-${{ matrix.build-tag }}-${{ runner.os }}-
+            ${{ steps.lineage.outputs.prefix }}-
+            ${{ steps.lineage.outputs.lineage }}-
 
       - name: Run tests with race detection and build each changed module
         env:
@@ -354,7 +369,7 @@ jobs:
       - name: Save the Go caches
         # Always on the base branch; on a pull request only when no entry for these go.sum
         # files was found. A failed test still saves what compiled; a cancelled run saves nothing.
-        if: ${{ !cancelled() && (github.event_name != 'pull_request' || !startsWith(steps.go-cache.outputs.cache-matched-key, format('golang-ci-tests-{0}-{1}-{2}-', matrix.build-tag, runner.os, needs.detect-modules.outputs.go-sum-hash))) }}
+        if: ${{ !cancelled() && (github.event_name != 'pull_request' || !startsWith(steps.go-cache.outputs.cache-matched-key, format('{0}-', steps.lineage.outputs.prefix))) }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -540,6 +555,21 @@ jobs:
           install-only: true
           skip-cache: true
 
+      - name: Name the cache lineage
+        # A cache key may not contain a comma, and a build tag may ("skipAuth,insecurecookie"),
+        # so the leg's name in the key joins its tags with "+".
+        id: lineage
+        env:
+          JOB: golang-ci-lint
+          TAG: ${{ matrix.build-tag }}
+          OS: ${{ runner.os }}
+          GO_SUM_HASH: ${{ needs.detect-modules.outputs.go-sum-hash }}
+        run: |
+          {
+            echo "lineage=$JOB-${TAG//,/+}-$OS"
+            echo "prefix=$JOB-${TAG//,/+}-$OS-$GO_SUM_HASH"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Restore the Go and golangci-lint caches
         # The analysis cache rides with the build cache it depends on, in the lint lineage.
         id: go-cache
@@ -549,10 +579,10 @@ jobs:
             ~/go/pkg/mod
             ~/.cache/go-build
             ~/.cache/golangci-lint
-          key: golang-ci-lint-${{ matrix.build-tag }}-${{ runner.os }}-${{ needs.detect-modules.outputs.go-sum-hash }}-${{ github.sha }}
+          key: ${{ steps.lineage.outputs.prefix }}-${{ github.sha }}
           restore-keys: |
-            golang-ci-lint-${{ matrix.build-tag }}-${{ runner.os }}-${{ needs.detect-modules.outputs.go-sum-hash }}-
-            golang-ci-lint-${{ matrix.build-tag }}-${{ runner.os }}-
+            ${{ steps.lineage.outputs.prefix }}-
+            ${{ steps.lineage.outputs.lineage }}-
 
       - name: golangci-lint each changed module
         id: golangci-lint
@@ -596,7 +626,7 @@ jobs:
         run: exit 1
 
       - name: Save the Go and golangci-lint caches
-        if: ${{ !cancelled() && (github.event_name != 'pull_request' || !startsWith(steps.go-cache.outputs.cache-matched-key, format('golang-ci-lint-{0}-{1}-{2}-', matrix.build-tag, runner.os, needs.detect-modules.outputs.go-sum-hash))) }}
+        if: ${{ !cancelled() && (github.event_name != 'pull_request' || !startsWith(steps.go-cache.outputs.cache-matched-key, format('{0}-', steps.lineage.outputs.prefix))) }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
