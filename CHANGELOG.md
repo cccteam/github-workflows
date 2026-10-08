@@ -1,5 +1,12 @@
 # Changelog
 
+## [8.2.1](https://github.com/cccteam/github-workflows/compare/v8.2.0...v8.2.1) (2026-10-08)
+
+
+### Bug Fixes
+
+* **golang-ci:** a comma-joined build tag names its cache lineage with + instead, since a cache key may not hold a comma ([#188](https://github.com/cccteam/github-workflows/issues/188)) ([7690536](https://github.com/cccteam/github-workflows/commit/76905366eec7681503e9518e387d47550bcef72f))
+
 ## [8.2.0](https://github.com/cccteam/github-workflows/compare/v8.1.0...v8.2.0) (2026-10-08)
 
 
