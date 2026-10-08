@@ -1,5 +1,12 @@
 # Changelog
 
+## [8.2.0](https://github.com/cccteam/github-workflows/compare/v8.1.0...v8.2.0) (2026-10-08)
+
+
+### Features
+
+* **golang-ci:** per-job Go and lint caches warmed from the default branch; govulncheck, mockgen and Semgrep pinned ([#186](https://github.com/cccteam/github-workflows/issues/186)) ([6935350](https://github.com/cccteam/github-workflows/commit/693535036e2a48a68d2711920c662a499359a512))
+
 ## [8.1.0](https://github.com/cccteam/github-workflows/compare/v8.0.0...v8.1.0) (2026-10-07)
 
 
