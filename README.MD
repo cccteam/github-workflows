@@ -66,14 +66,22 @@ To use a reusable workflow in your repository, create a workflow file in your `.
 name: CI
 on:
   pull_request:
+  push:
+    branches: [master] # the default branch: see Caches below
 
 jobs:
   golang-ci:
-    uses: cccteam/github-workflows/.github/workflows/golang-ci.yml@v8.0.0
+    uses: cccteam/github-workflows/.github/workflows/golang-ci.yml@v8.2.0
     with:
       build-tags: '["", "dev"]'
       golangci-lint-version: 'v2.12.2'
 ```
+
+#### Golang CI caches
+
+Each Go job restores the module cache and the build cache (the linter its analysis cache with them) from the nearest saved entry of its own lineage, keyed by the changed modules' go.sum files and the commit, so a run compiles only what the commit changed. GitHub serves a pull request only the entries saved on its own branch and on its base branch, which is why the calling workflow runs on `push` to the default branch too: that run checks every module (it is the merge result) and saves an entry after every job, and the next pull request starts from it. A pull request run saves only when no entry for its go.sum files exists, so the caches grow with merges, not with pushes.
+
+The tools are pinned by inputs with current defaults: `govulncheck-version` (run from the module cache), `mockgen-version`, `semgrep-image` (by digest); the vulnerability database and the Semgrep rules are read live. `coverage: true` makes the untagged test leg measure statement coverage and write a per-package table to the job summary (`coverage-exclude` is a regular expression over file paths left out, generated mocks say), which replaces a separate coverage job. `runs-on-heavy` names a runner for the test and lint jobs alone, so a larger runner carries the compiles while the cheap jobs stay on the standard one.
 
 #### Golang CI required checks
 

@@ -12,7 +12,9 @@
 # there is no such file), and a module is changed when the diff against the base branch touches a
 # file under it; a file under several modules belongs to the deepest one. The base branch is the
 # pull request's base (the repository's default branch for other events) unless the base-branch
-# input names another. Every job after
+# input names another. A push to the base branch itself (the calling workflow runs on push to its
+# default branch) checks every module: it is the merge result, and the caches it saves are the
+# ones the next pull requests restore. Every job after
 # detect-modules runs once (once per build tag for tests-and-builds and linter) and loops over
 # the changed modules, so an unchanged module takes no runner, and the check names carry no
 # module, so a ruleset requires the same names however many modules the repository holds:
@@ -30,6 +32,17 @@
 # let a pull request through unchecked. When no module changed, the jobs after detect-modules
 # are skipped and report success. Inside a job the changed modules run in series, every module
 # runs even when an earlier one failed, and the job fails at the end naming each failed module.
+#
+# Caches. Each Go job restores the module cache (~/go/pkg/mod) and the build cache
+# (~/.cache/go-build), the linter its analysis cache with them, from the nearest saved entry of
+# its own lineage: the same changed modules' go.sum files first, then any entry of the lineage.
+# Neither can serve a stale result: a module is verified against go.sum when read, and a build
+# output is addressed by the hash of its inputs, so an older entry is either what this commit
+# computes or unused. A run on the base branch saves an entry under its commit after every job,
+# so the next pull request starts from the merge result; a pull request run saves only when no
+# entry for its go.sum files exists (a dependency change, or a cold repository), so the caches
+# grow with merges, not with pushes. Entries are readable by a pull request only from its own
+# branch and its base, which is why the base branch must run this workflow.
 #
 # NOTE: Certain inputs are required, as detailed in the "inputs" section below.
 
@@ -60,6 +73,31 @@ on:
         required: false
         type: boolean
         default: false
+      govulncheck-version:
+        required: false
+        type: string
+        default: 'v1.8.0'
+        description: 'The golang.org/x/vuln release govulncheck runs from (go run …@version); the vulnerability database is read live'
+      mockgen-version:
+        required: false
+        type: string
+        default: 'v0.6.0'
+        description: 'The go.uber.org/mock release installed before go generate'
+      semgrep-image:
+        required: false
+        type: string
+        default: 'semgrep/semgrep:1.179.0@sha256:93963d9295a366f59e4850127b1550400ee7b388f04fe144e4a1f6325d96e01b'
+        description: 'The Semgrep container image, pinned by digest; the rules are read live'
+      coverage:
+        required: false
+        type: boolean
+        default: false
+        description: 'The untagged test leg also measures statement coverage and writes a per-package table to the job summary'
+      coverage-exclude:
+        required: false
+        type: string
+        default: ''
+        description: 'A regular expression over file paths left out of the coverage table (generated mocks, say: /mock)'
       upload-sarif:
         required: false
         type: boolean
@@ -79,6 +117,11 @@ on:
         required: false
         type: string
         default: 'ubuntu-latest'
+      runs-on-heavy:
+        required: false
+        type: string
+        default: ''
+        description: 'The runner for the test and lint jobs, which compile the modules; empty, the default, means runs-on. A larger runner here leaves the cheap jobs on the standard one.'
       base-branch:
         required: false
         type: string
@@ -101,8 +144,8 @@ jobs:
       changed: ${{ steps.set-modules.outputs.changed }}
       # The first changed module directory; its go.mod picks the Go toolchain to set up.
       first: ${{ steps.set-modules.outputs.first }}
-      # The changed modules' go.sum files, one per line, keying setup-go's dependency cache.
-      go-sum-paths: ${{ steps.set-modules.outputs.go-sum-paths }}
+      # A hash of the changed modules' go.sum files, keying the caches.
+      go-sum-hash: ${{ steps.set-modules.outputs.go-sum-hash }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -114,6 +157,8 @@ jobs:
           BASE_INPUT: ${{ inputs.base-branch }}
           PR_BASE: ${{ github.base_ref }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          EVENT: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
           base="${BASE_INPUT:-${PR_BASE:-$DEFAULT_BRANCH}}"
           if [ -f "$CONFIG" ]; then
@@ -124,27 +169,34 @@ jobs:
           else
             modules=$(jq -cn --arg wd "$WORKING_DIR" '[$wd]')
           fi
-          # A base that does not exist fails this step, and the step is a required check, rather than
-          # reporting no changes and letting the pull request through unchecked.
-          git diff --name-only "refs/remotes/origin/$base" HEAD > "$RUNNER_TEMP/changed-files"
-          changed=$(jq -c --rawfile files "$RUNNER_TEMP/changed-files" '
-            . as $modules
-            | ($files | split("\n") | map(select(. != ""))) as $files
-            | [ $files[]
-                | . as $f
-                | [$modules[] | . as $m | select($m == "." or ($f | startswith($m + "/")))]
-                | sort_by(length)
-                | last
-                | select(. != null) ]
-            | unique' <<<"$modules")
+          if [ "$EVENT" = push ] && [ "$REF_NAME" = "$base" ]; then
+            # The push is to the base branch itself: there is nothing to diff against, and the
+            # run is the merge result, so every module is checked and every cache saved.
+            changed=$modules
+          else
+            # A base that does not exist fails this step, and the step is a required check, rather than
+            # reporting no changes and letting the pull request through unchecked.
+            git diff --name-only "refs/remotes/origin/$base" HEAD > "$RUNNER_TEMP/changed-files"
+            changed=$(jq -c --rawfile files "$RUNNER_TEMP/changed-files" '
+              . as $modules
+              | ($files | split("\n") | map(select(. != ""))) as $files
+              | [ $files[]
+                  | . as $f
+                  | [$modules[] | . as $m | select($m == "." or ($f | startswith($m + "/")))]
+                  | sort_by(length)
+                  | last
+                  | select(. != null) ]
+              | unique' <<<"$modules")
+          fi
+          # The changed modules' go.sum files, in a fixed order, hashed as one; a module without
+          # one contributes nothing.
+          go_sum_hash=$(jq -r 'map(. + "/go.sum") | .[]' <<<"$changed" | sort | xargs -r cat 2>/dev/null | sha256sum | cut -c1-16)
           {
             echo "base=$base"
             echo "any=$(jq -r 'if length > 0 then "true" else "false" end' <<<"$changed")"
             echo "changed=$(jq -r 'join(" ")' <<<"$changed")"
             echo "first=$(jq -r '.[0] // ""' <<<"$changed")"
-            echo "go-sum-paths<<GO_SUM_PATHS"
-            jq -r 'map(. + "/go.sum") | join("\n")' <<<"$changed"
-            echo "GO_SUM_PATHS"
+            echo "go-sum-hash=$go_sum_hash"
           } >> "$GITHUB_OUTPUT"
           echo "base: $base"
           echo "modules: $(jq -r 'join(" ")' <<<"$modules")"
@@ -165,10 +217,24 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: ${{ needs.detect-modules.outputs.first }}/go.mod
-          cache-dependency-path: ${{ needs.detect-modules.outputs.go-sum-paths }}
+          cache: false
+
+      - name: Restore the Go caches
+        id: go-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: golang-ci-generate-${{ runner.os }}-${{ needs.detect-modules.outputs.go-sum-hash }}-${{ github.sha }}
+          restore-keys: |
+            golang-ci-generate-${{ runner.os }}-${{ needs.detect-modules.outputs.go-sum-hash }}-
+            golang-ci-generate-${{ runner.os }}-
 
       - name: Install mockgen
-        run: go install go.uber.org/mock/mockgen@latest
+        env:
+          VERSION: ${{ inputs.mockgen-version }}
+        run: go install "go.uber.org/mock/mockgen@$VERSION"
 
       - name: Install Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
@@ -196,11 +262,23 @@ jobs:
             exit 1
           fi
 
+      - name: Save the Go caches
+        # Always on the base branch; on a pull request only when no entry for these go.sum
+        # files was found. A failed step still saves what was downloaded and compiled; a
+        # cancelled run saves nothing.
+        if: ${{ !cancelled() && (github.event_name != 'pull_request' || !startsWith(steps.go-cache.outputs.cache-matched-key, format('golang-ci-generate-{0}-{1}-', runner.os, needs.detect-modules.outputs.go-sum-hash))) }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ steps.go-cache.outputs.cache-primary-key }}
+
   tests-and-builds:
     name: Run tests and builds${{ matrix.build-tag != '' && format(' ({0})', matrix.build-tag) || '' }}
     needs: detect-modules
     if: needs.detect-modules.outputs.any == 'true'
-    runs-on: ${{ inputs.runs-on }}
+    runs-on: ${{ inputs.runs-on-heavy || inputs.runs-on }}
     permissions:
       contents: read
     strategy:
@@ -215,22 +293,74 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: ${{ needs.detect-modules.outputs.first }}/go.mod
-          cache-dependency-path: ${{ needs.detect-modules.outputs.go-sum-paths }}
+          cache: false
+
+      - name: Restore the Go caches
+        id: go-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: golang-ci-tests-${{ matrix.build-tag }}-${{ runner.os }}-${{ needs.detect-modules.outputs.go-sum-hash }}-${{ github.sha }}
+          restore-keys: |
+            golang-ci-tests-${{ matrix.build-tag }}-${{ runner.os }}-${{ needs.detect-modules.outputs.go-sum-hash }}-
+            golang-ci-tests-${{ matrix.build-tag }}-${{ runner.os }}-
 
       - name: Run tests with race detection and build each changed module
         env:
           MODULES: ${{ needs.detect-modules.outputs.changed }}
           TAGS: ${{ matrix.build-tag != '' && format('-tags {0}', matrix.build-tag) || '' }}
           GOTOOLCHAIN: auto
+          # The untagged leg measures coverage when asked; a profile per module under RUNNER_TEMP.
+          COVERAGE: ${{ inputs.coverage && matrix.build-tag == '' }}
+          COVERAGE_EXCLUDE: ${{ inputs.coverage-exclude }}
         run: |
           failed=""
           for dir in $MODULES; do
             echo "::group::$dir"
-            (cd "$dir" && go test $TAGS -v -race ./... && go build $TAGS ./...) || failed="$failed $dir"
+            cover=""
+            if [ "$COVERAGE" = "true" ]; then
+              cover="-covermode=atomic -coverpkg=./... -coverprofile=$RUNNER_TEMP/cover-$(echo "$dir" | tr '/.' '__').out"
+            fi
+            (cd "$dir" && go test $TAGS -v -race $cover ./... && go build $TAGS ./...) || failed="$failed $dir"
             echo "::endgroup::"
           done
+          if [ "$COVERAGE" = "true" ]; then
+            for dir in $MODULES; do
+              profile="$RUNNER_TEMP/cover-$(echo "$dir" | tr '/.' '__').out"
+              [ -s "$profile" ] || continue
+              {
+                echo "## Test coverage, $dir (statements${COVERAGE_EXCLUDE:+; paths matching $COVERAGE_EXCLUDE excluded})"
+                echo
+                echo '| Package | Covered | Statements |'
+                echo '| --- | ---: | ---: |'
+                tail -n +2 "$profile" | { if [ -n "$COVERAGE_EXCLUDE" ]; then grep -vE "$COVERAGE_EXCLUDE"; else cat; fi; } | awk '
+                  { key=$1; stm[key]=$2; if ($3>cnt[key]) cnt[key]=$3 }
+                  END {
+                    for (k in stm) {
+                      split(k, a, ":"); pkg=a[1]; sub(/\/[^\/]*$/, "", pkg)
+                      tot[pkg]+=stm[k]; if (cnt[k]>0) cov[pkg]+=stm[k]; T+=stm[k]; if (cnt[k]>0) C+=stm[k]
+                    }
+                    for (p in tot) printf "| %s | %.1f%% | %d |\n", p, 100*cov[p]/tot[p], tot[p]
+                    if (T>0) printf "| **total** | **%.1f%%** | **%d** |\n", 100*C/T, T
+                  }' | sort
+              } >> "$GITHUB_STEP_SUMMARY"
+            done
+          fi
           for dir in $failed; do echo "::error::$dir: tests or build failed"; done
           test -z "$failed"
+
+      - name: Save the Go caches
+        # Always on the base branch; on a pull request only when no entry for these go.sum
+        # files was found. A failed test still saves what compiled; a cancelled run saves nothing.
+        if: ${{ !cancelled() && (github.event_name != 'pull_request' || !startsWith(steps.go-cache.outputs.cache-matched-key, format('golang-ci-tests-{0}-{1}-{2}-', matrix.build-tag, runner.os, needs.detect-modules.outputs.go-sum-hash))) }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ steps.go-cache.outputs.cache-primary-key }}
 
   govulncheck:
     name: Go Vulnerability Check
@@ -249,10 +379,19 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: ${{ needs.detect-modules.outputs.first }}/go.mod
-          cache-dependency-path: ${{ needs.detect-modules.outputs.go-sum-paths }}
+          cache: false
 
-      - name: Install govulncheck
-        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      - name: Restore the Go caches
+        id: go-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: golang-ci-vuln-${{ runner.os }}-${{ needs.detect-modules.outputs.go-sum-hash }}-${{ github.sha }}
+          restore-keys: |
+            golang-ci-vuln-${{ runner.os }}-${{ needs.detect-modules.outputs.go-sum-hash }}-
+            golang-ci-vuln-${{ runner.os }}-
 
       - name: govulncheck each changed module
         id: govulncheck
@@ -262,6 +401,8 @@ jobs:
         env:
           MODULES: ${{ needs.detect-modules.outputs.changed }}
           GOTOOLCHAIN: auto
+          # The pinned release, compiled once into the build cache; the database is read live.
+          GOVULNCHECK: golang.org/x/vuln/cmd/govulncheck@${{ inputs.govulncheck-version }}
           # One SARIF file per module under the workspace, where hashFiles can see them; empty when not uploading.
           SARIF_DIR: ${{ inputs.upload-sarif && format('{0}/.golang-ci/govulncheck', github.workspace) || '' }}
         run: |
@@ -270,9 +411,9 @@ jobs:
           for dir in $MODULES; do
             echo "::group::$dir"
             if [ -n "$SARIF_DIR" ]; then
-              (cd "$dir" && govulncheck -format sarif ./... > "$SARIF_DIR/$(echo "$dir" | tr '/.' '__').sarif") || failed="$failed $dir"
+              (cd "$dir" && go run "$GOVULNCHECK" -format sarif ./... > "$SARIF_DIR/$(echo "$dir" | tr '/.' '__').sarif") || failed="$failed $dir"
             else
-              (cd "$dir" && govulncheck ./...) || failed="$failed $dir"
+              (cd "$dir" && go run "$GOVULNCHECK" ./...) || failed="$failed $dir"
             fi
             echo "::endgroup::"
           done
@@ -290,6 +431,15 @@ jobs:
         if: ${{ inputs.upload-sarif && steps.govulncheck.outcome == 'failure' }}
         run: exit 1
 
+      - name: Save the Go caches
+        if: ${{ !cancelled() && (github.event_name != 'pull_request' || !startsWith(steps.go-cache.outputs.cache-matched-key, format('golang-ci-vuln-{0}-{1}-', runner.os, needs.detect-modules.outputs.go-sum-hash))) }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ steps.go-cache.outputs.cache-primary-key }}
+
   semgrep-scan:
     name: Run Semgrep Scan
     needs: detect-modules
@@ -300,7 +450,7 @@ jobs:
       contents: read
       actions: read
     container:
-      image: semgrep/semgrep
+      image: ${{ inputs.semgrep-image }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -310,10 +460,18 @@ jobs:
       - name: Determine baseline commit
         id: baseline
         # Diffs against the merge-base with the base branch so only findings introduced by this branch are
-        # reported, instead of re-scanning the whole module on every run.
+        # reported, instead of re-scanning the whole module on every run. A push to the base branch
+        # itself has no baseline and scans the changed modules whole.
         env:
           BASE: ${{ needs.detect-modules.outputs.base }}
-        run: echo "sha=$(git merge-base "refs/remotes/origin/$BASE" HEAD)" >> "$GITHUB_OUTPUT"
+          EVENT: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [ "$EVENT" = push ] && [ "$REF_NAME" = "$BASE" ]; then
+            echo "sha=" >> "$GITHUB_OUTPUT"
+          else
+            echo "sha=$(git merge-base "refs/remotes/origin/$BASE" HEAD)" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Perform Semgrep Analysis on each changed module
         env:
@@ -325,12 +483,14 @@ jobs:
         run: |
           failed=""
           [ -z "$SARIF_DIR" ] || mkdir -p "$SARIF_DIR"
+          baseline=""
+          [ -z "$BASELINE" ] || baseline="--baseline-commit=$BASELINE"
           for dir in $MODULES; do
             echo "::group::$dir"
             if [ -n "$SARIF_DIR" ]; then
-              (cd "$dir" && semgrep ci --config "$SEMGREP_CONFIG" --baseline-commit="$BASELINE" --max-target-bytes "$MAX_TARGET_BYTES" --sarif > "$SARIF_DIR/$(echo "$dir" | tr '/.' '__').sarif") || failed="$failed $dir"
+              (cd "$dir" && semgrep ci --config "$SEMGREP_CONFIG" $baseline --max-target-bytes "$MAX_TARGET_BYTES" --sarif > "$SARIF_DIR/$(echo "$dir" | tr '/.' '__').sarif") || failed="$failed $dir"
             else
-              (cd "$dir" && semgrep ci --config "$SEMGREP_CONFIG" --baseline-commit="$BASELINE" --max-target-bytes "$MAX_TARGET_BYTES") || failed="$failed $dir"
+              (cd "$dir" && semgrep ci --config "$SEMGREP_CONFIG" $baseline --max-target-bytes "$MAX_TARGET_BYTES") || failed="$failed $dir"
             fi
             echo "::endgroup::"
           done
@@ -348,7 +508,7 @@ jobs:
     name: Run golangci-lint${{ matrix.build-tag != '' && format(' ({0})', matrix.build-tag) || '' }}
     needs: detect-modules
     if: needs.detect-modules.outputs.any == 'true'
-    runs-on: ${{ inputs.runs-on }}
+    runs-on: ${{ inputs.runs-on-heavy || inputs.runs-on }}
     permissions:
       contents: read
       security-events: write
@@ -371,21 +531,28 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: ${{ needs.detect-modules.outputs.first }}/go.mod
-          cache-dependency-path: ${{ needs.detect-modules.outputs.go-sum-paths }}
+          cache: false
 
       - name: Install golangci-lint
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
           version: ${{ inputs.golangci-lint-version }}
           install-only: true
+          skip-cache: true
 
-      - name: Restore the golangci-lint analysis cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - name: Restore the Go and golangci-lint caches
+        # The analysis cache rides with the build cache it depends on, in the lint lineage.
+        id: go-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ~/.cache/golangci-lint
-          key: golangci-lint-${{ runner.os }}-${{ matrix.build-tag }}-${{ hashFiles('**/go.sum') }}
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+            ~/.cache/golangci-lint
+          key: golang-ci-lint-${{ matrix.build-tag }}-${{ runner.os }}-${{ needs.detect-modules.outputs.go-sum-hash }}-${{ github.sha }}
           restore-keys: |
-            golangci-lint-${{ runner.os }}-${{ matrix.build-tag }}-
+            golang-ci-lint-${{ matrix.build-tag }}-${{ runner.os }}-${{ needs.detect-modules.outputs.go-sum-hash }}-
+            golang-ci-lint-${{ matrix.build-tag }}-${{ runner.os }}-
 
       - name: golangci-lint each changed module
         id: golangci-lint
@@ -427,3 +594,13 @@ jobs:
       - name: Report failed golangci-lint SARIF run
         if: ${{ inputs.upload-sarif && steps.golangci-lint.outcome == 'failure' }}
         run: exit 1
+
+      - name: Save the Go and golangci-lint caches
+        if: ${{ !cancelled() && (github.event_name != 'pull_request' || !startsWith(steps.go-cache.outputs.cache-matched-key, format('golang-ci-lint-{0}-{1}-{2}-', matrix.build-tag, runner.os, needs.detect-modules.outputs.go-sum-hash))) }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+            ~/.cache/golangci-lint
+          key: ${{ steps.go-cache.outputs.cache-primary-key }}
