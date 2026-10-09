@@ -485,6 +485,12 @@ jobs:
           REF_NAME: ${{ github.ref_name }}
           BEFORE: ${{ github.event.before }}
         run: |
+          # The job runs in the Semgrep container, where the workspace belongs to the runner's
+          # user and not to the container's: git refuses it ("dubious ownership") unless it is
+          # a safe directory, and actions/checkout sets that only under a temporary HOME for
+          # its own commands. Without this line the lookups below fail quietly, the baseline
+          # comes out empty, and Semgrep scans whole.
+          git config --global --add safe.directory '*'
           if [ "$EVENT" = push ] && [ "$REF_NAME" = "$BASE" ]; then
             if [ -n "$BEFORE" ] && [ "$BEFORE" != "0000000000000000000000000000000000000000" ] && { git cat-file -e "$BEFORE^{commit}" 2>/dev/null || git fetch -q --depth=1 origin "$BEFORE" 2>/dev/null; }; then
               echo "sha=$BEFORE" >> "$GITHUB_OUTPUT"
@@ -492,7 +498,8 @@ jobs:
               echo "sha=" >> "$GITHUB_OUTPUT"
             fi
           else
-            echo "sha=$(git merge-base "refs/remotes/origin/$BASE" HEAD)" >> "$GITHUB_OUTPUT"
+            sha=$(git merge-base "refs/remotes/origin/$BASE" HEAD)
+            echo "sha=$sha" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Perform Semgrep Analysis on each changed module
