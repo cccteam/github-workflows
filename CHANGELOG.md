@@ -1,5 +1,12 @@
 # Changelog
 
+## [8.2.3](https://github.com/cccteam/github-workflows/compare/v8.2.2...v8.2.3) (2026-10-09)
+
+
+### Bug Fixes
+
+* the Semgrep job marks the workspace a safe git directory, so its baseline lookups work inside the container ([#194](https://github.com/cccteam/github-workflows/issues/194)) ([b4ac2b8](https://github.com/cccteam/github-workflows/commit/b4ac2b83af56cc390e43827e04d58babef4d5e0d))
+
 ## [8.2.2](https://github.com/cccteam/github-workflows/compare/v8.2.1...v8.2.2) (2026-10-09)
 
 
