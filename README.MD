@@ -18,13 +18,13 @@ This repository provides a collection of reusable GitHub Actions workflow templa
 
 - **Golang Security Scan**
   [`golang-security-scan.yml`](.github/workflows/golang-security-scan.yml):
-  Performs comprehensive security scanning for Go projects using govulncheck, Trivy, Semgrep, and Dependabot alerts. Notifies via Slack and creates GitHub issues for failed jobs. Optionally uploads SARIF reports to GitHub Advanced Security Dashboard for scheduled and manual runs.
+  Performs comprehensive security scanning for Go projects using govulncheck, Grype, Semgrep, and Dependabot alerts. Notifies via Slack and creates GitHub issues for failed jobs. Optionally uploads SARIF reports to GitHub Advanced Security Dashboard for scheduled and manual runs.
 
 ### Docker Workflows
 
 - **Docker Build & Scan**
   [`docker-build-and-scan.yml`](.github/workflows/docker-build-and-scan.yml):
-  Lints Dockerfiles, builds Docker images, and scans them for vulnerabilities using Trivy.
+  Lints Dockerfiles, builds Docker images, and scans them for vulnerabilities using Grype.
 
 ### Terraform Workflows
 
@@ -163,7 +163,7 @@ jobs:
     uses: cccteam/github-workflows/.github/workflows/golang-security-scan.yml@v5.9.0
     with:
       upload-sarif: true
-      execute-trivy-scan: true
+      execute-grype-scan: true
       execute-dependabot-check: true
       execute-semgrep-scan: true
       semgrep-config: auto
