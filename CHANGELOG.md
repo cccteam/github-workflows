@@ -1,5 +1,13 @@
 # Changelog
 
+## [8.2.2](https://github.com/cccteam/github-workflows/compare/v8.2.1...v8.2.2) (2026-10-09)
+
+
+### Bug Fixes
+
+* a push to the base branch skips the title check and diffs Semgrep against the head it replaced ([#191](https://github.com/cccteam/github-workflows/issues/191)) ([569861c](https://github.com/cccteam/github-workflows/commit/569861c6a3c7e1d8c4ed7c95c544ecbfcd76aa2f))
+* the security scan's Semgrep findings open a Semgrep Report issue like the other scanners', and its image is pinned by digest ([#192](https://github.com/cccteam/github-workflows/issues/192)) ([7e086b0](https://github.com/cccteam/github-workflows/commit/7e086b04852756208b7421087236b7b7bd1f7e6b))
+
 ## [8.2.1](https://github.com/cccteam/github-workflows/compare/v8.2.0...v8.2.1) (2026-10-08)
 
 
