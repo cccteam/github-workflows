@@ -8,6 +8,9 @@ permissions: {}
 jobs:
   main:
     name: Validate PR title
+    # Only a pull request has a title to validate: a caller that also runs on a push to its
+    # base branch (to warm its caches) skips this job there, and the skip counts as a pass.
+    if: ${{ github.event_name == 'pull_request' || github.event_name == 'pull_request_target' }}
     runs-on: ubuntu-latest
     permissions:
       pull-requests: read
