@@ -476,14 +476,21 @@ jobs:
         id: baseline
         # Diffs against the merge-base with the base branch so only findings introduced by this branch are
         # reported, instead of re-scanning the whole module on every run. A push to the base branch
-        # itself has no baseline and scans the changed modules whole.
+        # diffs against the head the push replaced (the merge it just made), so the base branch is
+        # held to what its pull requests were held to; the first push to a branch, with no previous
+        # head, scans the changed modules whole.
         env:
           BASE: ${{ needs.detect-modules.outputs.base }}
           EVENT: ${{ github.event_name }}
           REF_NAME: ${{ github.ref_name }}
+          BEFORE: ${{ github.event.before }}
         run: |
           if [ "$EVENT" = push ] && [ "$REF_NAME" = "$BASE" ]; then
-            echo "sha=" >> "$GITHUB_OUTPUT"
+            if [ -n "$BEFORE" ] && [ "$BEFORE" != "0000000000000000000000000000000000000000" ] && { git cat-file -e "$BEFORE^{commit}" 2>/dev/null || git fetch -q --depth=1 origin "$BEFORE" 2>/dev/null; }; then
+              echo "sha=$BEFORE" >> "$GITHUB_OUTPUT"
+            else
+              echo "sha=" >> "$GITHUB_OUTPUT"
+            fi
           else
             echo "sha=$(git merge-base "refs/remotes/origin/$BASE" HEAD)" >> "$GITHUB_OUTPUT"
           fi
