@@ -1,5 +1,12 @@
 # Changelog
 
+## [8.2.4](https://github.com/cccteam/github-workflows/compare/v8.2.3...v8.2.4) (2026-10-26)
+
+
+### Bug Fixes
+
+* **golang-ci:** the test job runs testcontainers without its reaper, so a suite starting several containers no longer races its start ([#196](https://github.com/cccteam/github-workflows/issues/196)) ([3952089](https://github.com/cccteam/github-workflows/commit/3952089cb0d712ad976f019aac015a03bba93698))
+
 ## [8.2.3](https://github.com/cccteam/github-workflows/compare/v8.2.2...v8.2.3) (2026-10-09)
 
 
