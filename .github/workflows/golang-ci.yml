@@ -327,6 +327,10 @@ jobs:
           MODULES: ${{ needs.detect-modules.outputs.changed }}
           TAGS: ${{ matrix.build-tag != '' && format('-tags {0}', matrix.build-tag) || '' }}
           GOTOOLCHAIN: auto
+          # testcontainers' reaper (Ryuk) is not needed on a runner discarded after the job, and a
+          # suite that starts several containers at once has raced its start here, failing a module
+          # that passes on a rerun.
+          TESTCONTAINERS_RYUK_DISABLED: "true"
           # The untagged leg measures coverage when asked; a profile per module under RUNNER_TEMP.
           COVERAGE: ${{ inputs.coverage && matrix.build-tag == '' }}
           COVERAGE_EXCLUDE: ${{ inputs.coverage-exclude }}
