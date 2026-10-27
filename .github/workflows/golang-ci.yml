@@ -33,6 +33,12 @@
 # are skipped and report success. Inside a job the changed modules run in series, every module
 # runs even when an earlier one failed, and the job fails at the end naming each failed module.
 #
+# detect-modules runs on detect-runs-on (ubuntu-latest by default): it only diffs the change,
+# and every other job waits for it, so a runner that takes a minute to provision would put that
+# minute on every run. The test leg of a build tag named in test-packages runs go test on those
+# packages alone (go build still builds the module), for a tag whose files are confined to a few
+# packages.
+#
 # Caches. Each Go job restores the module cache (~/go/pkg/mod) and the build cache
 # (~/.cache/go-build), the linter its analysis cache with them, from the nearest saved entry of
 # its own lineage: the same changed modules' go.sum files first, then any entry of the lineage.
@@ -43,6 +49,12 @@
 # entry for its go.sum files exists (a dependency change, or a cold repository), so the caches
 # grow with merges, not with pushes. Entries are readable by a pull request only from its own
 # branch and its base, which is why the base branch must run this workflow.
+#
+# go-generate-diff also keeps the resource generator's cache (generate-cache-path, the
+# .ccc-cache directory beside the go:generate directives) under a key hashed from the schema
+# migrations (generate-cache-key-files), so a run whose schema is unchanged skips the Spanner
+# emulator migration the generator would otherwise repeat. The directory must be ignored by git,
+# or the change check would report it.
 #
 # NOTE: Certain inputs are required, as detailed in the "inputs" section below.
 
@@ -82,7 +94,22 @@ on:
         required: false
         type: string
         default: 'v0.6.0'
-        description: 'The go.uber.org/mock release installed before go generate'
+        description: 'The go.uber.org/mock release installed before go generate when the module does not pin mockgen itself with a tool directive in go.mod (then go install tool installs the pinned one)'
+      generate-cache-path:
+        required: false
+        type: string
+        default: '**/.ccc-cache'
+        description: 'The resource generator''s cache directories (actions/cache path patterns), restored before go generate and saved after it; empty disables the cache. They must be ignored by git.'
+      generate-cache-key-files:
+        required: false
+        type: string
+        default: '**/schema/migrations/**'
+        description: 'The files (hashFiles patterns) whose hash keys the generator cache; a change to any of them starts the cache afresh'
+      test-packages:
+        required: false
+        type: string
+        default: '{}'
+        description: 'JSON object mapping a build tag to the package patterns go test runs for that tag, relative to each module (e.g. ''{"dev": "./pkg/config/... ./pkg/jobs/..."}''); a tag not listed tests ./... . go build always builds ./... .'
       semgrep-image:
         required: false
         type: string
@@ -117,6 +144,11 @@ on:
         required: false
         type: string
         default: 'ubuntu-latest'
+      detect-runs-on:
+        required: false
+        type: string
+        default: 'ubuntu-latest'
+        description: 'The runner for detect-modules, which only diffs the change and gates every other job; the default keeps it off a runner that takes long to provision'
       runs-on-heavy:
         required: false
         type: string
@@ -132,7 +164,7 @@ permissions: {}
 
 jobs:
   detect-modules:
-    runs-on: ${{ inputs.runs-on }}
+    runs-on: ${{ inputs.detect-runs-on }}
     permissions:
       contents: read
     outputs:
@@ -231,24 +263,37 @@ jobs:
             golang-ci-generate-${{ runner.os }}-${{ needs.detect-modules.outputs.go-sum-hash }}-
             golang-ci-generate-${{ runner.os }}-
 
-      - name: Install mockgen
-        env:
-          VERSION: ${{ inputs.mockgen-version }}
-        run: go install "go.uber.org/mock/mockgen@$VERSION"
-
       - name: Install Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+
+      - name: Restore the generator cache
+        if: inputs.generate-cache-path != ''
+        id: generate-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ inputs.generate-cache-path }}
+          key: golang-ci-generate-cache-${{ runner.os }}-${{ hashFiles(inputs.generate-cache-key-files) }}
 
       - name: Run go generate in each changed module
         env:
           MODULES: ${{ needs.detect-modules.outputs.changed }}
+          MOCKGEN_VERSION: ${{ inputs.mockgen-version }}
           # Lets go fetch a changed module's own toolchain when it is newer than the one set up.
           GOTOOLCHAIN: auto
         run: |
+          # A module that pins mockgen with a tool directive gets that release (and its other
+          # tools) from go install tool; any other gets the mockgen-version input.
+          install_mockgen() {
+            if go list tool 2>/dev/null | grep -qx go.uber.org/mock/mockgen; then
+              go install tool
+            else
+              go install "go.uber.org/mock/mockgen@$MOCKGEN_VERSION"
+            fi
+          }
           failed=""
           for dir in $MODULES; do
             echo "::group::$dir"
-            (cd "$dir" && go generate ./...) || failed="$failed $dir"
+            (cd "$dir" && install_mockgen && go generate ./...) || failed="$failed $dir"
             echo "::endgroup::"
           done
           for dir in $failed; do echo "::error::$dir: go generate failed"; done
@@ -273,6 +318,15 @@ jobs:
             ~/go/pkg/mod
             ~/.cache/go-build
           key: ${{ steps.go-cache.outputs.cache-primary-key }}
+
+      - name: Save the generator cache
+        # The key is the schema hash, so an entry is saved once per schema, by the first run
+        # that misses it; a module without the directory saves nothing.
+        if: ${{ !cancelled() && inputs.generate-cache-path != '' && steps.generate-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ inputs.generate-cache-path }}
+          key: ${{ steps.generate-cache.outputs.cache-primary-key }}
 
   tests-and-builds:
     name: Run tests and builds${{ matrix.build-tag != '' && format(' ({0})', matrix.build-tag) || '' }}
@@ -326,6 +380,8 @@ jobs:
         env:
           MODULES: ${{ needs.detect-modules.outputs.changed }}
           TAGS: ${{ matrix.build-tag != '' && format('-tags {0}', matrix.build-tag) || '' }}
+          TAG: ${{ matrix.build-tag }}
+          TEST_PACKAGES: ${{ inputs.test-packages }}
           GOTOOLCHAIN: auto
           # testcontainers' reaper (Ryuk) is not needed on a runner discarded after the job, and a
           # suite that starts several containers at once has raced its start here, failing a module
@@ -335,6 +391,8 @@ jobs:
           COVERAGE: ${{ inputs.coverage && matrix.build-tag == '' }}
           COVERAGE_EXCLUDE: ${{ inputs.coverage-exclude }}
         run: |
+          # The packages go test runs for this leg's tag: ./... unless test-packages names others.
+          packages=$(jq -r --arg tag "$TAG" '.[$tag] // "./..."' <<<"$TEST_PACKAGES")
           failed=""
           for dir in $MODULES; do
             echo "::group::$dir"
@@ -342,7 +400,7 @@ jobs:
             if [ "$COVERAGE" = "true" ]; then
               cover="-covermode=atomic -coverpkg=./... -coverprofile=$RUNNER_TEMP/cover-$(echo "$dir" | tr '/.' '__').out"
             fi
-            (cd "$dir" && go test $TAGS -v -race $cover ./... && go build $TAGS ./...) || failed="$failed $dir"
+            (cd "$dir" && go test $TAGS -v -race $cover $packages && go build $TAGS ./...) || failed="$failed $dir"
             echo "::endgroup::"
           done
           if [ "$COVERAGE" = "true" ]; then
