@@ -1,6 +1,8 @@
 # This reusable workflow can be used in repositories that include a Dockerfile to perform the following actions:
 #  - Lint the Docker file via 'hadolint'.
-#  - Build the Docker image.
+#  - Build the Docker image with Buildx, its layers cached in the GitHub Actions cache under a
+#    scope named for the Dockerfile, so a run restores the layers an earlier build of the same
+#    Dockerfile left (a pull request reads its base branch's), and rebuilds from the first changed one.
 #  - Optionally scan the Docker image for vulnerabilities via the 'Grype' scanner (disabled by default).
 #  - Optionally upload Grype scan results as a SARIF report to GitHub Advanced Security (disabled by default).
 #  - Optionally generate a Software Bill of Materials (SBOM) via 'Syft' (disabled by default).
@@ -88,18 +90,45 @@ jobs:
 
       - name: Prepare docker build args
         id: prepare-build-args
+        env:
+          DOCKER_BUILD_ARGS: ${{ inputs.docker-build-args }}
+          DOCKERFILE: ${{ inputs.dockerfile }}
+          REPOSITORY: ${{ github.repository }}
         run: |
-          build_args='${{ inputs.docker-build-args }}'
-          build_args=$(echo $build_args | jq -r '.[] | "--build-arg " + .' | xargs)
-          echo "BUILD_ARGS=$build_args" >> $GITHUB_ENV
-          dockerfile_safe=$(echo '${{ inputs.dockerfile }}' | sed 's/[^a-zA-Z0-9._-]/-/g')
-          echo "SBOM_ARTIFACT_NAME=sbom-${dockerfile_safe}" >> $GITHUB_ENV
+          # One KEY=VALUE per line for build-push-action. xargs strips shell quoting from each
+          # line, as it did when the args were spliced into a docker build command line, so a
+          # value quoted inside the JSON string still arrives without its quotes.
+          if ! build_args=$(jq -r '.[]' <<<"$DOCKER_BUILD_ARGS"); then
+            echo "::warning::docker-build-args is not a JSON array of strings; the image builds without build args"
+            build_args=""
+          fi
+          {
+            echo "build-args<<BUILD_ARGS_EOF"
+            xargs -r -L1 <<<"$build_args"
+            echo "BUILD_ARGS_EOF"
+          } >> "$GITHUB_OUTPUT"
+          dockerfile_safe=$(sed 's/[^a-zA-Z0-9._-]/-/g' <<<"$DOCKERFILE")
+          echo "cache-scope=$dockerfile_safe" >> "$GITHUB_OUTPUT"
+          echo "SBOM_ARTIFACT_NAME=sbom-${dockerfile_safe}" >> "$GITHUB_ENV"
+          echo "REPO_NAME=$(tr '[:upper:]' '[:lower:]' <<<"$REPOSITORY")" >> "$GITHUB_ENV"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Build docker image
-        run: |
-          repo_name=$(echo "${{ github.repository }}" | awk '{print tolower($0)}')
-          echo "REPO_NAME=$repo_name" >> $GITHUB_ENV
-          docker build $BUILD_ARGS -t $repo_name:latest -f ${{ inputs.dockerfile }} .
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: ${{ inputs.dockerfile }}
+          build-args: ${{ steps.prepare-build-args.outputs.build-args }}
+          tags: ${{ env.REPO_NAME }}:latest
+          push: false
+          # Loads the image into the docker daemon, where the scanners below read it by tag;
+          # a loaded image carries no provenance attestation.
+          load: true
+          provenance: false
+          cache-from: type=gha,scope=${{ steps.prepare-build-args.outputs.cache-scope }}
+          cache-to: type=gha,mode=max,scope=${{ steps.prepare-build-args.outputs.cache-scope }}
 
       - name: Run Grype vulnerability scanner
         if: ${{ inputs.execute-grype-scan && !inputs.upload-sarif }}
