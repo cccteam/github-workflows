@@ -1,8 +1,6 @@
 # This reusable workflow can be used in repositories that include a Dockerfile to perform the following actions:
 #  - Lint the Docker file via 'hadolint'.
-#  - Build the Docker image with Buildx, its layers cached in the GitHub Actions cache under a
-#    scope named for the Dockerfile, so a run restores the layers an earlier build of the same
-#    Dockerfile left (a pull request reads its base branch's), and rebuilds from the first changed one.
+#  - Build the Docker image.
 #  - Optionally scan the Docker image for vulnerabilities via the 'Grype' scanner (disabled by default).
 #  - Optionally upload Grype scan results as a SARIF report to GitHub Advanced Security (disabled by default).
 #  - Optionally generate a Software Bill of Materials (SBOM) via 'Syft' (disabled by default).
@@ -68,11 +66,6 @@ on:
         required: false
         type: string
         default: 'ubuntu-latest'
-      cache-mode:
-        required: false
-        type: string
-        default: 'max'
-        description: 'Which layers the build exports to the GitHub Actions cache: max (every stage, so a multi-stage build reuses its dependency layers), min (the final image only), or off (no cache)'
 
 permissions: {}
 
@@ -94,48 +87,33 @@ jobs:
           dockerfile: '${{ inputs.dockerfile }}'
 
       - name: Prepare docker build args
-        id: prepare-build-args
         env:
           DOCKER_BUILD_ARGS: ${{ inputs.docker-build-args }}
           DOCKERFILE: ${{ inputs.dockerfile }}
           REPOSITORY: ${{ github.repository }}
         run: |
-          # One KEY=VALUE per line for build-push-action. xargs strips shell quoting from each
-          # line, as it did when the args were spliced into a docker build command line, so a
-          # value quoted inside the JSON string still arrives without its quotes.
+          # One KEY=VALUE per line. xargs strips shell quoting from each line, as it did when the
+          # args were spliced into the command line, so a value quoted inside the JSON string
+          # still arrives without its quotes.
           if ! build_args=$(jq -r '.[]' <<<"$DOCKER_BUILD_ARGS"); then
             echo "::warning::docker-build-args is not a JSON array of strings; the image builds without build args"
             build_args=""
           fi
-          {
-            echo "build-args<<BUILD_ARGS_EOF"
-            xargs -r -L1 <<<"$build_args"
-            echo "BUILD_ARGS_EOF"
-          } >> "$GITHUB_OUTPUT"
+          xargs -r -L1 <<<"$build_args" > "$RUNNER_TEMP/docker-build-args"
           dockerfile_safe=$(sed 's/[^a-zA-Z0-9._-]/-/g' <<<"$DOCKERFILE")
-          echo "cache-scope=$dockerfile_safe" >> "$GITHUB_OUTPUT"
           echo "SBOM_ARTIFACT_NAME=sbom-${dockerfile_safe}" >> "$GITHUB_ENV"
           echo "REPO_NAME=$(tr '[:upper:]' '[:lower:]' <<<"$REPOSITORY")" >> "$GITHUB_ENV"
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-
       - name: Build docker image
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          context: .
-          file: ${{ inputs.dockerfile }}
-          build-args: ${{ steps.prepare-build-args.outputs.build-args }}
-          tags: ${{ env.REPO_NAME }}:latest
-          push: false
-          # Loads the image into the docker daemon, where the scanners below read it by tag;
-          # a loaded image carries no provenance attestation.
-          load: true
-          provenance: false
-          # zstd compresses the export faster than the default gzip, and a cache service error
-          # leaves the build itself unaffected.
-          cache-from: ${{ inputs.cache-mode != 'off' && format('type=gha,scope={0}', steps.prepare-build-args.outputs.cache-scope) || '' }}
-          cache-to: ${{ inputs.cache-mode != 'off' && format('type=gha,mode={0},scope={1},compression=zstd,ignore-error=true', inputs.cache-mode, steps.prepare-build-args.outputs.cache-scope) || '' }}
+        env:
+          DOCKERFILE: ${{ inputs.dockerfile }}
+        run: |
+          # An array keeps a value with spaces in one --build-arg.
+          args=()
+          while IFS= read -r arg; do
+            args+=(--build-arg "$arg")
+          done < "$RUNNER_TEMP/docker-build-args"
+          docker build "${args[@]}" -t "$REPO_NAME:latest" -f "$DOCKERFILE" .
 
       - name: Run Grype vulnerability scanner
         if: ${{ inputs.execute-grype-scan && !inputs.upload-sarif }}
