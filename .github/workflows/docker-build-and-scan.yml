@@ -68,6 +68,11 @@ on:
         required: false
         type: string
         default: 'ubuntu-latest'
+      cache-mode:
+        required: false
+        type: string
+        default: 'max'
+        description: 'Which layers the build exports to the GitHub Actions cache: max (every stage, so a multi-stage build reuses its dependency layers), min (the final image only), or off (no cache)'
 
 permissions: {}
 
@@ -127,8 +132,10 @@ jobs:
           # a loaded image carries no provenance attestation.
           load: true
           provenance: false
-          cache-from: type=gha,scope=${{ steps.prepare-build-args.outputs.cache-scope }}
-          cache-to: type=gha,mode=max,scope=${{ steps.prepare-build-args.outputs.cache-scope }}
+          # zstd compresses the export faster than the default gzip, and a cache service error
+          # leaves the build itself unaffected.
+          cache-from: ${{ inputs.cache-mode != 'off' && format('type=gha,scope={0}', steps.prepare-build-args.outputs.cache-scope) || '' }}
+          cache-to: ${{ inputs.cache-mode != 'off' && format('type=gha,mode={0},scope={1},compression=zstd,ignore-error=true', inputs.cache-mode, steps.prepare-build-args.outputs.cache-scope) || '' }}
 
       - name: Run Grype vulnerability scanner
         if: ${{ inputs.execute-grype-scan && !inputs.upload-sarif }}
