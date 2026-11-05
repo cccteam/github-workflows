@@ -197,7 +197,7 @@ jobs:
         shell: bash
 
       - name: Save govulncheck report as artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ env.REPORT_NAME }}
           path: ${{ env.REPORT_PATH }}
@@ -218,7 +218,7 @@ jobs:
     runs-on: ${{ inputs.runs-on }}
     steps:
       - name: Download all govulncheck reports
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: govulncheck-*
           merge-multiple: true
@@ -246,14 +246,14 @@ jobs:
 
       - name: Upload merged report 1
         if: hashFiles('govulncheck-report-1.txt') != ''
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: govulncheck-1
           path: govulncheck-report-1.txt
 
       - name: Upload merged report 2
         if: hashFiles('govulncheck-report-2.txt') != ''
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: govulncheck-2
           path: govulncheck-report-2.txt
@@ -287,12 +287,12 @@ jobs:
           semgrep scan --config ${{ inputs.semgrep-config }} --max-target-bytes ${{ inputs.semgrep-max-target-bytes }} --sarif > semgrep.sarif
       - name: Upload SARIF file for GitHub Advanced Security Dashboard
         if: inputs.upload-sarif
-        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
           sarif_file: semgrep.sarif
           category: semgrep
       - name: Save Semgrep report as artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: semgrep-1
           path: semgrep-report-1.txt
@@ -377,13 +377,13 @@ jobs:
 
       - name: Upload Grype SARIF file for GitHub Advanced Security Dashboard
         if: inputs.upload-sarif
-        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
           sarif_file: ${{ steps.grype_sarif.outputs.sarif }}
           category: grype
 
       - name: Save Grype report as artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ env.REPORT_NAME }}
           path: ${{ env.REPORT_PATH }}
@@ -444,7 +444,7 @@ jobs:
           fi
 
       - name: Upload Dependabot alerts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: dependabot-1
           path: dependabot-report-1.txt
@@ -495,12 +495,12 @@ jobs:
             echo "should_run=false" >> $GITHUB_OUTPUT
           fi
 
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         if: steps.setup.outputs.should_run == 'true'
         with:
           name: ${{ matrix.label }}-1
 
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         if: steps.setup.outputs.should_run == 'true' && inputs.scan-latest-release && matrix.label != 'dependabot' && matrix.label != 'semgrep'
         with:
           name: ${{ matrix.label }}-2
@@ -584,7 +584,7 @@ jobs:
 
       - name: Upload issue artifact
         if: steps.setup.outputs.should_run == 'true'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ matrix.label }}-issue
           path: ${{ matrix.label }}-issue.txt
@@ -597,28 +597,28 @@ jobs:
     steps:
       - name: Download govulncheck issue artifact
         if: needs.govulncheck.result == 'failure'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: govulncheck-issue
         continue-on-error: true # Continue if the artifact is not found
 
       - name: Download grype issue artifact
         if: inputs.execute-grype-scan && needs.grype.result == 'failure'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: grype-issue
         continue-on-error: true # Continue if the artifact is not found
 
       - name: Download dependabot issue artifact
         if: inputs.execute-dependabot-check && needs.dependabot.result == 'failure'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: dependabot-issue
         continue-on-error: true # Continue if the artifact is not found
 
       - name: Download semgrep issue artifact
         if: inputs.execute-semgrep-scan && needs.semgrep_scan.result == 'failure'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: semgrep-issue
         continue-on-error: true # Continue if the artifact is not found
