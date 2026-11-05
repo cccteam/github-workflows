@@ -30,7 +30,7 @@ This repository provides a collection of reusable GitHub Actions workflow templa
 
 - **Terraform CI**
   [`terraform-ci.yml`](.github/workflows/terraform-ci.yml):
-  Comprehensive Terraform CI workflow that auto-formats files (and pushes changes back to the PR), generates documentation, runs linting, and performs security scanning. Includes TFLint and Checkov scans optimized for changed files only. Optionally uploads SARIF results to GitHub Advanced Security Dashboard.
+  Comprehensive Terraform CI workflow that auto-formats files (and pushes changes back to the PR), generates documentation for modules, runs linting, and performs security scanning. Includes TFLint and Checkov scans optimized for changed files only. Optionally uploads SARIF results to GitHub Advanced Security Dashboard.
 
 - **Terraform Security Scan**
   [`terraform-security-scan.yml`](.github/workflows/terraform-security-scan.yml):
@@ -214,6 +214,8 @@ jobs:
       app_id: ${{ secrets.TERRAFORM_APP_ID }}
       app_pem: ${{ secrets.TERRAFORM_APP_PEM }}
 ```
+
+Docs are generated only for modules. A changed directory with a `backend` or `cloud` block is a root configuration, and the docs step skips it. This also keeps terraform-docs away from OpenTofu-only syntax such as provider `for_each`, which it can't parse ([terraform-docs#895](https://github.com/terraform-docs/terraform-docs/issues/895)).
 
 **Note:** The `working_dirs` input is deprecated and no longer required. The workflow now automatically detects changed Terraform directories and scans only those files. When `upload_sarif: true` is set, SARIF output is automatically enabled for both TFLint and Checkov regardless of the `output_format` and `output_file_path` inputs.
 

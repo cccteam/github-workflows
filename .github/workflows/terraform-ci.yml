@@ -1,7 +1,8 @@
 # This Continuous Integration (CI) workflow template can be used in repositories that contain Terraform code.
 #
 # The following jobs are included:
-#  * terraform-docs: Formats Terraform files, generates documentation, and pushes changes
+#  * terraform-docs: Formats Terraform files, generates documentation for modules
+#    (directories without a backend or cloud block), and pushes changes
 #  * tflint: Runs TFLint on changed Terraform files
 #  * checkov-scan: Runs Checkov security scanning on changed Terraform files
 #
@@ -144,6 +145,23 @@ jobs:
             echo "Changed Terraform directories: $CHANGED_DIRS"
             echo "changed=true" >> $GITHUB_OUTPUT
             echo "dirs=$CHANGED_DIRS" >> $GITHUB_OUTPUT
+
+            # Docs are for modules. A directory that declares a backend or
+            # cloud block is a root configuration: nothing calls it, so it
+            # gets no generated README. Root configurations can also use
+            # OpenTofu-only syntax (such as provider for_each) that
+            # terraform-docs can't parse.
+            # terraform-docs/gh-actions takes a comma-separated working-dir.
+            DOCS_DIRS=""
+            for DIR in $CHANGED_DIRS; do
+              [ -d "$DIR" ] || continue
+              if grep -qsE '^[[:space:]]*(backend[[:space:]]+"|cloud[[:space:]]*\{)' "$DIR"/*.tf; then
+                echo "Skipping docs for $DIR: root configuration"
+              else
+                DOCS_DIRS="${DOCS_DIRS:+$DOCS_DIRS,}$DIR"
+              fi
+            done
+            echo "docs_dirs=$DOCS_DIRS" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Format Terraform files
@@ -179,10 +197,10 @@ jobs:
           git push
 
       - name: Render Terraform docs and push changes
-        if: steps.check-changes.outputs.has_changes == 'true' && steps.changed-files.outputs.changed == 'true'
+        if: steps.check-changes.outputs.has_changes == 'true' && steps.changed-files.outputs.docs_dirs != ''
         uses: terraform-docs/gh-actions@6de6da0cefcc6b4b7a5cbea4d79d97060733093c # v1.4.1
         with:
-          working-dir: ${{ steps.changed-files.outputs.dirs }}
+          working-dir: ${{ steps.changed-files.outputs.docs_dirs }}
           output-file: ${{ inputs.output_file }}
           output-method: ${{ inputs.output_method }}
           git-push: ${{ inputs.git_push }}
