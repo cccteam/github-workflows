@@ -1,5 +1,17 @@
 # Changelog
 
+## [8.3.0](https://github.com/cccteam/github-workflows/compare/v8.2.3...v8.3.0) (2026-11-05)
+
+
+### Features
+
+* **terraform-ci:** generate docs only for modules, so root configurations and OpenTofu syntax no longer fail the job ([#199](https://github.com/cccteam/github-workflows/issues/199)) ([c5a3793](https://github.com/cccteam/github-workflows/commit/c5a3793ba2086093f41029683186811e48171a9a))
+
+
+### Bug Fixes
+
+* **golang-ci:** the test job runs testcontainers without its reaper, so a suite starting several containers no longer races its start ([#196](https://github.com/cccteam/github-workflows/issues/196)) ([3952089](https://github.com/cccteam/github-workflows/commit/3952089cb0d712ad976f019aac015a03bba93698))
+
 ## [8.2.3](https://github.com/cccteam/github-workflows/compare/v8.2.2...v8.2.3) (2026-10-09)
 
 
