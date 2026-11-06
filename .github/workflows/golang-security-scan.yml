@@ -78,7 +78,7 @@ on:
       semgrep-image:
         required: false
         type: string
-        default: 'semgrep/semgrep:1.179.0@sha256:93963d9295a366f59e4850127b1550400ee7b388f04fe144e4a1f6325d96e01b'
+        default: 'semgrep/semgrep:1.184.0@sha256:cc1b68266f267878b39739373ea9985b9a78e5d64497dd875c8de100b22695ed'
         description: 'The Semgrep image the scan runs in, pinned by digest (the same default as golang-ci)'
       semgrep-config:
         required: false
