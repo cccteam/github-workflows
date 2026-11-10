@@ -33,16 +33,18 @@
 # are skipped and report success. Inside a job the changed modules run in series, every module
 # runs even when an earlier one failed, and the job fails at the end naming each failed module.
 #
-# Caches. Each Go job restores the module cache (~/go/pkg/mod) and the build cache
-# (~/.cache/go-build), the linter its analysis cache with them, from the nearest saved entry of
-# its own lineage: the same changed modules' go.sum files first, then any entry of the lineage.
-# Neither can serve a stale result: a module is verified against go.sum when read, and a build
+# Caches. Each Go job restores the build cache (~/.cache/go-build), the linter its analysis
+# cache with it, from the nearest saved entry of its own lineage: the same changed modules'
+# go.sum files first, then any entry of the lineage. It cannot serve a stale result: a build
 # output is addressed by the hash of its inputs, so an older entry is either what this commit
-# computes or unused. A run on the base branch saves an entry under its commit after every job,
-# so the next pull request starts from the merge result; a pull request run saves only when no
-# entry for its go.sum files exists (a dependency change, or a cold repository), so the caches
-# grow with merges, not with pushes. Entries are readable by a pull request only from its own
-# branch and its base, which is why the base branch must run this workflow.
+# computes or unused. The module cache (~/go/pkg/mod) is not cached: the module proxy serves a
+# cold download in seconds, and it would be about half of every entry, which pushes the base
+# branch's entries out of the repository's 10 GB cache limit and leaves every run cold. A run on
+# the base branch saves an entry under its commit after every job, so the next pull request
+# starts from the merge result; a pull request run saves only when no entry for its go.sum files
+# exists (a dependency change, or a cold repository), so the caches grow with merges, not with
+# pushes. Entries are readable by a pull request only from its own branch and its base, which is
+# why the base branch must run this workflow.
 #
 # NOTE: Certain inputs are required, as detailed in the "inputs" section below.
 
@@ -224,7 +226,6 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
-            ~/go/pkg/mod
             ~/.cache/go-build
           key: golang-ci-generate-${{ runner.os }}-${{ needs.detect-modules.outputs.go-sum-hash }}-${{ github.sha }}
           restore-keys: |
@@ -270,7 +271,6 @@ jobs:
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
-            ~/go/pkg/mod
             ~/.cache/go-build
           key: ${{ steps.go-cache.outputs.cache-primary-key }}
 
@@ -315,7 +315,6 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
-            ~/go/pkg/mod
             ~/.cache/go-build
           key: ${{ steps.lineage.outputs.prefix }}-${{ github.sha }}
           restore-keys: |
@@ -377,7 +376,6 @@ jobs:
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
-            ~/go/pkg/mod
             ~/.cache/go-build
           key: ${{ steps.go-cache.outputs.cache-primary-key }}
 
@@ -405,7 +403,6 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
-            ~/go/pkg/mod
             ~/.cache/go-build
           key: golang-ci-vuln-${{ runner.os }}-${{ needs.detect-modules.outputs.go-sum-hash }}-${{ github.sha }}
           restore-keys: |
@@ -455,7 +452,6 @@ jobs:
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
-            ~/go/pkg/mod
             ~/.cache/go-build
           key: ${{ steps.go-cache.outputs.cache-primary-key }}
 
@@ -594,7 +590,6 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
-            ~/go/pkg/mod
             ~/.cache/go-build
             ~/.cache/golangci-lint
           key: ${{ steps.lineage.outputs.prefix }}-${{ github.sha }}
@@ -648,7 +643,6 @@ jobs:
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
-            ~/go/pkg/mod
             ~/.cache/go-build
             ~/.cache/golangci-lint
           key: ${{ steps.go-cache.outputs.cache-primary-key }}
