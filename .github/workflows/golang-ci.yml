@@ -41,12 +41,13 @@
 # cold download in seconds, and it would be about half of every entry, which pushes the base
 # branch's entries out of the repository's 10 GB cache limit and leaves every run cold. A run on
 # the base branch saves an entry under its commit after every job, so the next pull request
-# starts from the merge result. A pull request run never saves: a pull request that changes
-# dependencies saves entries bigger than the base branch's, and a few of them evict the base
-# branch's entries within minutes, so every other pull request starts cold. Such a pull request
-# restores the nearest base branch entry instead and compiles what its dependencies changed.
+# starts from the merge result. A pull request run saves only when it restored nothing (a
+# repository whose base branch doesn't run this workflow, or a cold one), so its later pushes
+# start warm. A pull request that changes dependencies restores the nearest base branch entry
+# and doesn't save: its entries would be bigger than the base branch's, and a few of them evict
+# the base branch's entries within minutes, so every other pull request would start cold.
 # Entries are readable by a pull request only from its own branch and its base, which is why
-# the base branch must run this workflow.
+# the base branch should run this workflow.
 #
 # NOTE: Certain inputs are required, as detailed in the "inputs" section below.
 
@@ -266,9 +267,9 @@ jobs:
           fi
 
       - name: Save the Go caches
-        # Only on the base branch, never on a pull request. A failed step still saves what
-        # compiled; a cancelled run saves nothing.
-        if: ${{ !cancelled() && github.event_name != 'pull_request' }}
+        # Always on the base branch; on a pull request only when nothing was restored. A failed
+        # step still saves what compiled; a cancelled run saves nothing.
+        if: ${{ !cancelled() && (github.event_name != 'pull_request' || steps.go-cache.outputs.cache-matched-key == '') }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -371,9 +372,9 @@ jobs:
           test -z "$failed"
 
       - name: Save the Go caches
-        # Only on the base branch, never on a pull request. A failed test still saves what
-        # compiled; a cancelled run saves nothing.
-        if: ${{ !cancelled() && github.event_name != 'pull_request' }}
+        # Always on the base branch; on a pull request only when nothing was restored. A failed
+        # test still saves what compiled; a cancelled run saves nothing.
+        if: ${{ !cancelled() && (github.event_name != 'pull_request' || steps.go-cache.outputs.cache-matched-key == '') }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -449,7 +450,7 @@ jobs:
         run: exit 1
 
       - name: Save the Go caches
-        if: ${{ !cancelled() && github.event_name != 'pull_request' }}
+        if: ${{ !cancelled() && (github.event_name != 'pull_request' || steps.go-cache.outputs.cache-matched-key == '') }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -640,7 +641,7 @@ jobs:
         run: exit 1
 
       - name: Save the Go and golangci-lint caches
-        if: ${{ !cancelled() && github.event_name != 'pull_request' }}
+        if: ${{ !cancelled() && (github.event_name != 'pull_request' || steps.go-cache.outputs.cache-matched-key == '') }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
