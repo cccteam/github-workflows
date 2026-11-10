@@ -1,5 +1,12 @@
 # Changelog
 
+## [8.3.1](https://github.com/cccteam/github-workflows/compare/v8.3.0...v8.3.1) (2026-11-10)
+
+
+### Performance Improvements
+
+* **golang-ci:** cache only the build cache, and save on a pull request only when nothing was restored ([#204](https://github.com/cccteam/github-workflows/issues/204)) ([2977f30](https://github.com/cccteam/github-workflows/commit/2977f30919a4ffcc66be46f298e85d61fc491dc4))
+
 ## [8.3.0](https://github.com/cccteam/github-workflows/compare/v8.2.3...v8.3.0) (2026-11-05)
 
 
