@@ -30,11 +30,12 @@ This repository provides a collection of reusable GitHub Actions workflow templa
 
 - **Terraform CI**
   [`terraform-ci.yml`](.github/workflows/terraform-ci.yml):
-  Comprehensive Terraform CI workflow that auto-formats files (and pushes changes back to the PR), generates documentation for modules, runs linting, and performs security scanning. Includes TFLint and Checkov scans optimized for changed files only. Optionally uploads SARIF results to GitHub Advanced Security Dashboard.
+  Comprehensive Terraform CI workflow that auto-formats files with OpenTofu (and pushes changes back to the PR), generates documentation for modules, runs linting, and performs security scanning. Includes TFLint and Checkov scans optimized for changed files only, and reports when a component's environment folders hold different code (see [Environment consistency](#environment-consistency)). That report only warns for now. Optionally uploads SARIF results to GitHub Advanced Security Dashboard.
 
 - **Terraform Security Scan**
   [`terraform-security-scan.yml`](.github/workflows/terraform-security-scan.yml):
   Continuously scans the entire Terraform codebase on a weekly schedule (or manually triggered).
+
   
 ### PR Quality & Security Workflows
 
@@ -178,46 +179,70 @@ jobs:
 ### Terraform CI Example
 
 ```yaml
-name: Terraform CI
+name: Infrastructure Checks
 on:
   pull_request:
-    paths:
-      - 'terraform/**'
+
+permissions: {}
 
 jobs:
   terraform-ci:
-    uses: cccteam/github-workflows/.github/workflows/terraform-ci.yml@v5.9.0
+    uses: cccteam/github-workflows/.github/workflows/terraform-ci.yml@<sha> # <version>
     with:
-      terraform_version: '1.9.0'
+      tofu_version: '1.13.9' # Optional: the OpenTofu version tofu fmt runs at
       upload_sarif: false    # Optional: Upload security results to GitHub Security
     secrets:
-      app_id: ${{ secrets.TERRAFORM_APP_ID }}
+      app_client_id: ${{ secrets.TERRAFORM_APP_CLIENT_ID }}
       app_pem: ${{ secrets.TERRAFORM_APP_PEM }}
+    permissions:
+      actions: read
+      contents: write
+      pull-requests: write
+      security-events: write
 ```
 
-### Terraform CI Example
-
-```yaml
-name: Terraform CI
-on:
-  pull_request:
-    paths:
-      - 'terraform/**'
-
-jobs:
-  terraform-ci:
-    uses: cccteam/github-workflows/.github/workflows/terraform-ci.yml@v5.9.0
-    with:
-      terraform_version: '1.9.0'
-      upload_sarif: false    # Optional: Upload security results to GitHub Security
-    secrets:
-      app_id: ${{ secrets.TERRAFORM_APP_ID }}
-      app_pem: ${{ secrets.TERRAFORM_APP_PEM }}
-```
+Changed files are formatted with `tofu fmt` at `tofu_version`. The `terraform_version` input is deprecated and ignored: a call that still passes it gets a warning, and a future major release will remove it. The `working_dirs` input is gone. Changed directories are detected from the pull request.
 
 Docs are generated only for modules. A changed directory with a `backend` or `cloud` block is a root configuration, and the docs step skips it. This also keeps terraform-docs away from OpenTofu-only syntax such as provider `for_each`, which it can't parse ([terraform-docs#895](https://github.com/terraform-docs/terraform-docs/issues/895)).
 
-**Note:** The `working_dirs` input is deprecated and no longer required. The workflow now automatically detects changed Terraform directories and scans only those files. When `upload_sarif: true` is set, SARIF output is automatically enabled for both TFLint and Checkov regardless of the `output_format` and `output_file_path` inputs.
+**Note:** When `upload_sarif: true` is set, SARIF output is automatically enabled for both TFLint and Checkov regardless of the `output_format` and `output_file_path` inputs.
+
+#### Environment consistency
+
+Each component keeps one root folder per environment, numbered in promotion order, and every folder must hold the same code. Values that differ between environments come from Scalr workspace variables. A resource only some environments need goes behind a variable that turns it on, such as `count = var.enable_cloud_sql ? 1 : 0`.
+
+The `environment-consistency` job finds every folder named `<number>-<code>`, where the code is one of `environment_codes`, and groups the folders by parent directory. It compares each folder with the one before it in promotion order (`1-dev` with `2-tst`, `2-tst` with `4-prd`), so each difference shows up at the step where it starts. Only OpenTofu files are compared (`environment_include_files`: `*.tf`, `*.tf.json` and `.terraform.lock.hcl`), at any depth. A file in one folder and not the other fails the check, and so does any line that differs, except for these:
+
+- In every `environment_backend_file` (`initialize.tf`), the quoted values of `environment_masked_keys` are masked. The defaults cover the Scalr workspace and Scalr environment in the `cloud` block (`name`, `organization`), the same in `scalr_outputs` data sources (`workspace`, `environment`), and a hardcoded `environment` tag. A region root such as `1-int/us-east-1/initialize.tf` is masked too.
+- `import`, `moved` and `removed` blocks, and the comment lines directly above them, are skipped in every file. Import IDs differ per environment, and the blocks are deleted once every environment has applied them. A file left with nothing else in it, such as an `import.tf`, counts as absent.
+- Blank lines are skipped. Every other comment is compared like code, so a comment that names one environment fails the check.
+- Files matching `environment_ignore_files` are skipped. It's empty by default.
+
+The lock file is compared like any other file, so every environment runs the provider versions the environment before it tested.
+
+Numbered folders with other codes, such as `0-bootstrap`, `3-shr` or `4-cmn`, are left out, so layered repos and shared-services folders don't fail the check. The job summary lists them, so a non-standard name such as `3-prod` doesn't drop out of the check unnoticed. A component with only one environment folder is skipped, and a module repository, which has no environment folders, passes with nothing to compare.
+
+The check covers the whole repository on every run, not only the folders a pull request changed, so drift that is already on the default branch shows up on every pull request.
+
+`environment_consistency` sets what happens when the folders differ:
+
+- `warn` (the default): the job adds a warning annotation for each difference, writes the diffs to the job summary, comments on the pull request, and passes.
+- `fail`: the same, but the job fails. A repository whose folders match should set this, so new drift can't get in.
+- `off`: the job doesn't run.
+
+The pull request comment lists the files that differ (the first 50) and links to the job summary for the diffs. The job keeps one comment per pull request and edits it on each run, and when the folders match again it rewrites the comment to say so. A pull request from a fork gets a read-only token, so it gets no comment, and the job doesn't fail over that. The job needs `pull-requests: write`, which callers already grant for `terraform-docs`.
+
+`warn` is the default while repositories clean up. A future major release will make `fail` the default, and the comment tells each pull request so.
+
+| Input | Default | Description |
+| --- | --- | --- |
+| `environment_consistency` | `warn` | `warn`, `fail` or `off` |
+| `environment_working_directory` | `.` | Directory to search |
+| `environment_codes` | `dev,int,tst,uat,stg,prd` | Environment codes whose folders are compared |
+| `environment_backend_file` | `initialize.tf` | File name whose `environment_masked_keys` values may differ |
+| `environment_masked_keys` | `name,organization,workspace,environment` | Keys whose quoted values may differ in `environment_backend_file` |
+| `environment_include_files` | `*.tf,*.tf.json,.terraform.lock.hcl` | Comma-separated glob patterns, matched against file names, of the files compared |
+| `environment_ignore_files` | | Comma-separated glob patterns, matched against file names, left out |
 
 ### Terraform Security Scan Example
 

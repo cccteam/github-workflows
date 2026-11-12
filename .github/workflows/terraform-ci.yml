@@ -1,10 +1,36 @@
-# This Continuous Integration (CI) workflow template can be used in repositories that contain Terraform code.
+# This Continuous Integration (CI) workflow template can be used in repositories that contain OpenTofu (or Terraform) code.
 #
 # The following jobs are included:
-#  * terraform-docs: Formats Terraform files, generates documentation for modules
-#    (directories without a backend or cloud block), and pushes changes
+#  * terraform-docs: Formats changed files with tofu fmt, generates documentation
+#    for modules (directories without a backend or cloud block), and pushes changes
 #  * tflint: Runs TFLint on changed Terraform files
 #  * checkov-scan: Runs Checkov security scanning on changed Terraform files
+#  * environment-consistency: Reports when a component's environment folders
+#    (1-dev, 2-tst, 4-prd, ...) hold different code, in the job summary and in
+#    a pull request comment it updates on each run. With
+#    environment_consistency: warn (the default) the job passes; with fail it
+#    fails. A future major release will make fail the default. Every folder of a
+#    component must hold the same code, so a change applied in the first
+#    environment is the change that reaches production. Per-environment values
+#    come from Scalr workspace variables, and a resource only some
+#    environments need sits behind a variable that turns it on.
+#
+#    It compares each environment folder with the one before it in promotion
+#    order (1-dev with 2-tst, 2-tst with 4-prd), file by file at any depth. Only
+#    OpenTofu files are compared (environment_include_files). These differences
+#    are allowed:
+#     - In every environment_backend_file (initialize.tf), the quoted values of
+#       environment_masked_keys: the Scalr workspace and Scalr environment in
+#       the cloud block (name, organization) and in scalr_outputs data sources
+#       (workspace, environment), and an environment tag.
+#     - import, moved and removed blocks, with the comment lines directly above
+#       them. Import IDs differ per environment, and the blocks are deleted once
+#       every environment has applied them. A file left with nothing else in it
+#       counts as absent.
+#     - Blank lines. Every other comment is compared like code.
+#     - Files matching environment_ignore_files.
+#    It checks the whole repository, not only the folders a pull request
+#    changed. A module repository has no environment folders and passes.
 #
 # NOTE: Certain inputs are required, as detailed in the "inputs" section below.
 
@@ -15,11 +41,6 @@ permissions: {}
 on:
   workflow_call:
     inputs:
-      working_dirs:
-        description: '(Deprecated) Comma-separated list of directories containing Terraform configs. Now auto-detected from changed files.'
-        required: false
-        type: string
-        default: ''
       output_file:
         description: Output file for generated docs
         required: false
@@ -35,11 +56,16 @@ on:
         required: false
         type: boolean
         default: true
-      terraform_version:
-        description: 'Terraform version to use'
+      tofu_version:
+        description: 'OpenTofu version used to format files'
         required: false
         type: string
-        default: '1.13.1'
+        default: '1.13.9' # renovate: datasource=github-releases depName=opentofu/opentofu
+      terraform_version:
+        description: '(Deprecated) Ignored. Files are formatted with OpenTofu at tofu_version. Remove this input; a future major release will drop it'
+        required: false
+        type: string
+        default: ''
       output_format:
         description: 'Output format for Checkov results (e.g., cli or cli,sarif)'
         required: false
@@ -57,6 +83,41 @@ on:
         default: false
       skip_check:
         description: 'Comma-separated list of checks to skip (e.g., CKV_TF_1,CKV_GCP_18)'
+        required: false
+        type: string
+        default: ''
+      environment_consistency:
+        description: 'What the environment-consistency job does when environment folders differ: warn (report, comment on the pull request and pass), fail (also fail the job) or off (skip the job)'
+        required: false
+        type: string
+        default: 'warn'
+      environment_working_directory:
+        description: 'Directory the environment-consistency job searches for environment folders'
+        required: false
+        type: string
+        default: '.'
+      environment_codes:
+        description: 'Comma-separated environment codes. Folders named <number>-<code> are compared; others, such as 0-bootstrap or 3-shr, are left out and listed in the job summary'
+        required: false
+        type: string
+        default: 'dev,int,tst,uat,stg,prd'
+      environment_backend_file:
+        description: 'File name, at any depth in an environment folder, in which the values of environment_masked_keys may differ'
+        required: false
+        type: string
+        default: 'initialize.tf'
+      environment_masked_keys:
+        description: 'Comma-separated keys whose quoted string values may differ in environment_backend_file'
+        required: false
+        type: string
+        default: 'name,organization,workspace,environment'
+      environment_include_files:
+        description: 'Comma-separated glob patterns, matched against file names at any depth, of the files the environment comparison covers'
+        required: false
+        type: string
+        default: '*.tf,*.tf.json,.terraform.lock.hcl'
+      environment_ignore_files:
+        description: 'Comma-separated glob patterns, matched against file names at any depth, left out of the environment comparison'
         required: false
         type: string
         default: ''
@@ -116,18 +177,19 @@ jobs:
           token: ${{ steps.app-token.outputs.token }}
           fetch-depth: 0
 
-      - name: Warn about deprecated working_dirs input
-        if: steps.check-changes.outputs.has_changes == 'true' && inputs.working_dirs != ''
+      - name: Warn about deprecated terraform_version input
+        if: inputs.terraform_version != ''
         run: |
-          echo "⚠️  WARNING: The 'working_dirs' input is deprecated and no longer used."
-          echo "The workflow now automatically detects changed Terraform directories."
-          echo "You can safely remove 'working_dirs' from your workflow configuration."
+          echo "::warning::terraform_version is deprecated and ignored. Files are formatted with OpenTofu ${TOFU_VERSION}. Remove terraform_version from the call to terraform-ci.yml, and set tofu_version to pick another OpenTofu version."
+        env:
+          TOFU_VERSION: ${{ inputs.tofu_version }}
 
-      - name: Set up Terraform
+      - name: Set up OpenTofu
         if: steps.check-changes.outputs.has_changes == 'true'
-        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
         with:
-          terraform_version: ${{ inputs.terraform_version }}
+          tofu_version: ${{ inputs.tofu_version }}
+          tofu_wrapper: false
 
       - name: Find changed Terraform directories
         if: steps.check-changes.outputs.has_changes == 'true'
@@ -164,13 +226,13 @@ jobs:
             echo "docs_dirs=$DOCS_DIRS" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Format Terraform files
+      - name: Format files
         if: steps.check-changes.outputs.has_changes == 'true' && steps.changed-files.outputs.changed == 'true'
         run: |
           #!/bin/bash
           set -e
-          if ! command -v terraform &> /dev/null; then
-            echo "Error: Terraform is not installed."
+          if ! command -v tofu &> /dev/null; then
+            echo "Error: OpenTofu is not installed."
             exit 1
           fi
           DIRS="${{ steps.changed-files.outputs.dirs }}"
@@ -181,11 +243,11 @@ jobs:
           IFS=' ' read -ra DIR_ARRAY <<< "$DIRS"
           for DIR in "${DIR_ARRAY[@]}"; do
             if [ -d "$DIR" ]; then
-              echo "Formatting Terraform files in $DIR..."
-              terraform fmt -recursive "$DIR"
+              echo "Formatting files in $DIR..."
+              tofu fmt -recursive "$DIR"
             fi
           done
-          echo "Terraform files formatted."
+          echo "Files formatted."
 
       - name: Commit and push formatted files
         if: steps.check-changes.outputs.has_changes == 'true' && steps.changed-files.outputs.changed == 'true'
@@ -347,3 +409,255 @@ jobs:
         with:
           sarif_file: results.sarif
           category: checkov
+
+  environment-consistency:
+    name: Check environment folders match
+    runs-on: ubuntu-latest
+    if: inputs.environment_consistency != 'off'
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Compare environment folders
+        id: compare
+        env:
+          MODE: ${{ inputs.environment_consistency }}
+          WORKING_DIRECTORY: ${{ inputs.environment_working_directory }}
+          ENVIRONMENTS: ${{ inputs.environment_codes }}
+          BACKEND_FILE: ${{ inputs.environment_backend_file }}
+          MASKED_KEYS: ${{ inputs.environment_masked_keys }}
+          INCLUDE_FILES: ${{ inputs.environment_include_files }}
+          IGNORE_FILES: ${{ inputs.environment_ignore_files }}
+        run: |
+          set -euo pipefail
+
+          if [[ $MODE != warn && $MODE != fail ]]; then
+            echo "::error::environment_consistency must be warn, fail or off, not '$MODE'."
+            exit 1
+          fi
+          level=warning
+          [[ $MODE == warn ]] || level=error
+
+          summary="${GITHUB_STEP_SUMMARY:-/dev/null}"
+          # The file list for the pull request comment.
+          findings="${RUNNER_TEMP:?}/environment-consistency.md"
+          : > "$findings"
+          env_codes="${ENVIRONMENTS//[[:space:]]/}"
+          env_regex="(^|/)[0-9]+-(${env_codes//,/|})$"
+          IFS=, read -ra include_patterns <<< "${INCLUDE_FILES//[[:space:]]/}"
+          IFS=, read -ra ignore_patterns <<< "${IGNORE_FILES//[[:space:]]/}"
+          masked_keys="${MASKED_KEYS//[[:space:]]/}"
+          masked_keys="${masked_keys//,/|}"
+          differences=0
+
+          # Whether a file name matches one of the glob patterns that follow it.
+          matches_any() {
+            local name=${1##*/} pattern
+            shift
+            for pattern in "$@"; do
+              # shellcheck disable=SC2053 # the pattern is a glob on purpose
+              [[ -n $pattern && $name == $pattern ]] && return 0
+            done
+            return 1
+          }
+
+          # A file's content, with what may differ removed: the masked values in
+          # the backend file, import, moved and removed blocks with the comment
+          # lines directly above them, and blank lines. Other comments stay.
+          # tofu fmt starts and ends top-level blocks in the first column.
+          normalized() {
+            local dir=$1 file=$2
+            if [[ ${file##*/} == "$BACKEND_FILE" ]]; then
+              sed -E 's/((^|[{[:space:]])('"$masked_keys"')[[:space:]]*=[[:space:]]*)"[^"]*"/\1"<per-environment>"/g' "$dir/$file"
+            else
+              cat "$dir/$file"
+            fi | awk '
+              skip { if (/^}/) skip = 0; next }
+              /^[[:space:]]*(#|\/\/)/ { held = held $0 "\n"; next }
+              /^(import|moved|removed)[[:space:]]*\{/ { held = ""; if (!/}[[:space:]]*$/) skip = 1; next }
+              { printf "%s", held; held = "" }
+              NF == 0 { next }
+              { print }
+              END { printf "%s", held }
+            '
+          }
+
+          # Compared files under an environment folder, relative to it, sorted.
+          # A file with nothing left after normalizing counts as absent.
+          tracked_files() {
+            git -C "$1" ls-files | while IFS= read -r file; do
+              matches_any "$file" "${include_patterns[@]}" || continue
+              ! matches_any "$file" "${ignore_patterns[@]}" || continue
+              [[ -n $(normalized "$1" "$file") ]] || continue
+              printf '%s\n' "$file"
+            done | LC_ALL=C sort
+          }
+
+          report() {
+            local file=$1 message=$2 detail=${3:-}
+            differences=$((differences + 1))
+            echo "::$level file=$file::$message"
+            echo "- \`$file\`: $message" >> "$findings"
+            {
+              echo "- \`$file\`: $message"
+              if [[ -n $detail ]]; then
+                echo
+                echo '```diff'
+                printf '%s\n' "$detail"
+                echo '```'
+                echo
+              fi
+            } >> "$summary"
+            [[ -z $detail ]] || printf '%s\n' "$detail"
+          }
+
+          compare() {
+            local base=$1 other=$2 file diff_output
+            local base_files other_files
+            base_files=$(tracked_files "$base")
+            other_files=$(tracked_files "$other")
+
+            while IFS= read -r file; do
+              [[ -n $file ]] || continue
+              report "$other/$file" "not in $base"
+            done < <(comm -13 <(echo "$base_files") <(echo "$other_files"))
+
+            while IFS= read -r file; do
+              [[ -n $file ]] || continue
+              report "$base/$file" "missing from $other"
+            done < <(comm -23 <(echo "$base_files") <(echo "$other_files"))
+
+            while IFS= read -r file; do
+              [[ -n $file ]] || continue
+              if ! diff_output=$(diff -u --label "$base/$file" --label "$other/$file" \
+                  <(normalized "$base" "$file") <(normalized "$other" "$file")); then
+                report "$other/$file" "differs from $base/$file" "$diff_output"
+              fi
+            done < <(comm -12 <(echo "$base_files") <(echo "$other_files"))
+          }
+
+          mapfile -t numbered_dirs < <(
+            find "$WORKING_DIRECTORY" \( -name .git -o -name .terraform \) -prune -o -type d -print \
+              | grep -E '(^|/)[0-9]+-[^/]+$' | sed 's|^\./||' | sort -V
+          )
+          mapfile -t env_dirs < <(printf '%s\n' "${numbered_dirs[@]}" | grep -E "$env_regex" || true)
+          mapfile -t skipped_dirs < <(printf '%s\n' "${numbered_dirs[@]}" | grep -vE "$env_regex" || true)
+
+          declare -A components=()
+          component_names=()
+          for dir in "${env_dirs[@]}"; do
+            [[ -n $dir ]] || continue
+            components[$(dirname "$dir")]+="$dir"$'\n'
+          done
+
+          echo "## Environment folder consistency" >> "$summary"
+          compared=0
+          mapfile -t component_names < <(printf '%s\n' "${!components[@]}" | sort)
+          for component in "${component_names[@]}"; do
+            [[ -n $component ]] || continue
+            mapfile -t dirs < <(printf '%s' "${components[$component]}" | sort -V)
+            (( ${#dirs[@]} > 1 )) || continue
+            compared=$((compared + 1))
+            echo "Comparing ${dirs[*]}"
+            echo "### \`$component\`: ${dirs[*]##*/}" >> "$summary"
+            for (( i = 1; i < ${#dirs[@]}; i++ )); do
+              compare "${dirs[i-1]}" "${dirs[i]}"
+            done
+          done
+
+          if (( ${#skipped_dirs[@]} > 0 )) && [[ -n ${skipped_dirs[0]} ]]; then
+            {
+              echo
+              echo "Left out, because their codes aren't in \`environment_codes\`: ${skipped_dirs[*]}"
+            } | tee -a "$summary"
+          fi
+
+          echo "differences=$differences" >> "${GITHUB_OUTPUT:-/dev/null}"
+
+          if (( compared == 0 )); then
+            echo "No component has more than one folder matching $env_regex, so there is nothing to compare. A module repository has none." | tee -a "$summary"
+          elif (( differences > 0 )); then
+            {
+              echo
+              echo "$differences difference(s). Move each one into a Scalr workspace variable,"
+              echo "or behind a variable that turns the resource on, so every folder holds the same code."
+            } | tee -a "$summary"
+            if [[ $MODE == fail ]]; then
+              exit 1
+            fi
+            echo "environment_consistency is warn, so the job passes." | tee -a "$summary"
+          else
+            echo "All $compared component(s) match." | tee -a "$summary"
+          fi
+
+      # One comment per pull request, found by its marker and edited on each
+      # run. A pull request from a fork gets a read-only token, so a failure to
+      # comment doesn't fail the job.
+      - name: Comment on the pull request
+        if: >-
+          !cancelled() && github.event_name == 'pull_request'
+          && steps.compare.outputs.differences != ''
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MODE: ${{ inputs.environment_consistency }}
+          DIFFERENCES: ${{ steps.compare.outputs.differences }}
+          REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+
+          marker='<!-- cccteam/github-workflows: environment-consistency -->'
+          findings="$RUNNER_TEMP/environment-consistency.md"
+          body="$RUNNER_TEMP/environment-consistency-comment.md"
+          max_listed=50
+
+          comment_id=$(gh api --paginate "repos/$REPOSITORY/issues/$PR_NUMBER/comments" \
+            --jq ".[] | select(.body | contains(\"$marker\")) | .id" | head -n 1)
+
+          if (( DIFFERENCES == 0 )); then
+            if [[ -z $comment_id ]]; then
+              echo "Environment folders match, and there is no earlier comment to update."
+              exit 0
+            fi
+            {
+              echo "$marker"
+              echo "### Environment folders match"
+              echo
+              echo "The differences reported here earlier are fixed. Every environment folder holds the same code."
+            } > "$body"
+          else
+            {
+              echo "$marker"
+              echo "### Environment folders don't match"
+              echo
+              echo "This repository has $DIFFERENCES difference(s) between environment folders that should hold the same code. The check covers the whole repository, so some may be older than this pull request. The [job summary]($RUN_URL) shows each diff."
+              echo
+              head -n "$max_listed" "$findings"
+              listed=$(wc -l < "$findings")
+              if (( listed > max_listed )); then
+                echo "- ...and $((listed - max_listed)) more in the job summary."
+              fi
+              echo
+              echo "Every environment folder of a component should hold the same code, comments included. Put values that differ between environments in Scalr workspace variables, and put a resource that only some environments need behind a variable that turns it on."
+              echo
+              if [[ $MODE == fail ]]; then
+                echo "This repository enforces the check, so the pull request can't pass until the folders match."
+              else
+                echo "For now this check only warns. A future release of \`cccteam/github-workflows\` will make it fail, so please fix these before then. Once the folders match, set \`environment_consistency: fail\` where this repository calls \`terraform-ci.yml\` to enforce it now."
+              fi
+            } > "$body"
+          fi
+
+          if [[ -n $comment_id ]]; then
+            gh api --method PATCH "repos/$REPOSITORY/issues/comments/$comment_id" -F "body=@$body" > /dev/null
+            echo "Updated comment $comment_id."
+          else
+            gh api --method POST "repos/$REPOSITORY/issues/$PR_NUMBER/comments" -F "body=@$body" > /dev/null
+            echo "Added a comment."
+          fi
