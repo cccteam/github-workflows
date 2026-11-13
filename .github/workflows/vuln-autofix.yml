@@ -107,7 +107,8 @@ jobs:
       run:
         shell: bash
     env:
-      BRANCH_PREFIX: claude/vuln-autofix/
+      # One branch and one pull request. Each run that has a fix replaces the branch and updates the pull request.
+      BRANCH: claude/vuln-autofix
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -224,55 +225,21 @@ jobs:
 
           count=$(jq length "$RUNNER_TEMP/actionable.json")
           top=$(jq -r 'map(.severity) | if length == 0 then "none" elif index("critical") then "critical" elif index("high") then "high" elif index("medium") then "medium" elif index("low") then "low" else "unknown" end' "$RUNNER_TEMP/actionable.json")
-          key=$(jq -r 'map("\(.ecosystem):\(.package)@\(.fixed)") | sort | join("\n")' "$RUNNER_TEMP/actionable.json" | sha256sum | cut -c1-12)
           jq -r '.[] | "- [\(.severity | ascii_upcase)] \(.ids | join(", ")) `\(.package)` (fix: \(.fixed))"' "$RUNNER_TEMP/actionable.json" > "$RUNNER_TEMP/targets.md"
 
           {
             echo "count=$count"
             echo "top-severity=$top"
-            echo "key=$key"
             echo "vulns=$(jq -c . "$RUNNER_TEMP/actionable.json")"
           } >> "$GITHUB_OUTPUT"
           echo "Actionable vulnerabilities: $count"
           cat "$RUNNER_TEMP/targets.md"
 
-      - name: Skip if an open pull request already covers these
-        id: dedupe
-        if: steps.gate.outputs.count != '0'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          KEY: ${{ steps.gate.outputs.key }}
-        run: |
-          existing=$(gh pr list --repo "$REPO" --state open --limit 100 --json url,headRefName,body \
-            | jq -r --arg prefix "$BRANCH_PREFIX" --arg marker "vuln-autofix-key: $KEY" \
-                'map(select((.headRefName | startswith($prefix)) and (.body | contains($marker)))) | .[0].url // empty')
-          if [[ -n "$existing" ]]; then
-            echo "An open pull request already covers these vulnerabilities: $existing"
-            echo "proceed=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "proceed=true" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Create fix branch
-        id: branch
-        if: steps.dedupe.outputs.proceed == 'true'
-        env:
-          BASE_BRANCH: ${{ github.ref_name }}
-        run: |
-          branch="${BRANCH_PREFIX}$(date -u +%F)-${GITHUB_RUN_ID}"
-          git checkout -b "$branch"
-          {
-            echo "name=$branch"
-            echo "base-branch=$BASE_BRANCH"
-            echo "base-sha=$(git rev-parse HEAD)"
-          } >> "$GITHUB_OUTPUT"
-
       # ---- Step B: fix ----------------------------------------------------------------------------------------
 
       - name: Fix with Claude
         id: claude
-        if: steps.dedupe.outputs.proceed == 'true'
+        if: steps.gate.outputs.count != '0'
         continue-on-error: true # the guards below report a failed run to Slack
         uses: anthropics/claude-code-action@4d75e5f390ee76b2e09c1980ecc99ff3a2e088c8 # v1.0.275
         env:
@@ -310,9 +277,9 @@ jobs:
 
       - name: Guard the diff
         id: guard
-        if: steps.dedupe.outputs.proceed == 'true'
+        if: steps.gate.outputs.count != '0'
         env:
-          BASE_SHA: ${{ steps.branch.outputs.base-sha }}
+          BASE_SHA: ${{ github.sha }}
           CLAUDE_OUTCOME: ${{ steps.claude.outcome }}
           EXTRA_ALLOWED: ${{ inputs.extra-allowed-files-regex }}
         run: |
@@ -560,9 +527,7 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           REPO: ${{ github.repository }}
-          BRANCH: ${{ steps.branch.outputs.name }}
-          BASE_BRANCH: ${{ steps.branch.outputs.base-branch }}
-          KEY: ${{ steps.gate.outputs.key }}
+          BASE_BRANCH: ${{ github.ref_name }}
           TOP_SEVERITY: ${{ steps.gate.outputs.top-severity }}
           LABELS: ${{ inputs.pr-labels }}
           NEEDS_HUMAN_LABEL: ${{ inputs.needs-human-label }}
@@ -586,10 +551,12 @@ jobs:
           git commit -q -m "$title" -m "Automated by the vulnerability autofix workflow: $RUN_URL"
           auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
           echo "::add-mask::$auth"
-          git -c "http.extraheader=AUTHORIZATION: basic $auth" push -q "${GITHUB_SERVER_URL}/${REPO}.git" "HEAD:refs/heads/${BRANCH}"
+          # The branch is replaced, unless it already holds exactly these files (then its checks do not run again)
+          if [[ "$(gh api "repos/${REPO}/commits/${BRANCH}" --jq .commit.tree.sha 2>/dev/null || true)" != "$(git rev-parse 'HEAD^{tree}')" ]]; then
+            git -c "http.extraheader=AUTHORIZATION: basic $auth" push -q --force "${GITHUB_SERVER_URL}/${REPO}.git" "HEAD:refs/heads/${BRANCH}"
+          fi
 
           {
-            echo "<!-- vuln-autofix-key: $KEY -->"
             if [[ "$needs_human" == "true" ]]; then
               echo "## First-pass security fix: needs a human"
               echo
@@ -640,12 +607,18 @@ jobs:
           for l in "${labels[@]}"; do
             gh label create "$l" --repo "$REPO" > /dev/null 2>&1 || true
           done
-          pr_url=$(gh pr create --repo "$REPO" --base "$BASE_BRANCH" --head "$BRANCH" --title "$title" \
-            --body-file "$RUNNER_TEMP/pr-body.md" --label "$all_labels" "${draft[@]}" | tail -n1)
-          {
-            echo "pr-url=$pr_url"
-            echo "needs-human=$needs_human"
-          } >> "$GITHUB_OUTPUT"
+          pr_url=$(gh pr list --repo "$REPO" --head "$BRANCH" --state open --json url --jq '.[0].url // empty')
+          if [[ -n "$pr_url" ]]; then
+            # Already reported when it was opened, so Slack is not posted again
+            gh pr edit "$pr_url" --title "$title" --body-file "$RUNNER_TEMP/pr-body.md"
+          else
+            pr_url=$(gh pr create --repo "$REPO" --base "$BASE_BRANCH" --head "$BRANCH" --title "$title" \
+              --body-file "$RUNNER_TEMP/pr-body.md" --label "$all_labels" "${draft[@]}" | tail -n1)
+            {
+              echo "pr-url=$pr_url"
+              echo "needs-human=$needs_human"
+            } >> "$GITHUB_OUTPUT"
+          fi
 
           # Nothing that failed a guard is ever auto-merged
           if [[ "$needs_human" == "true" ]]; then

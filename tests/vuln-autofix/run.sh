@@ -76,13 +76,14 @@ cat > "$fakebin/gh" <<'GH'
 #!/usr/bin/env bash
 echo "$*" >> "$GH_LOG"
 [[ "$1 $2" == "pr create" ]] && echo "https://example.com/o/r/pull/1"
+[[ "$1 $2" == "pr list" ]] && echo "${GH_OPEN_PR:-}"
 exit 0
 GH
 chmod +x "$fakebin/gh"
 open_pr() { # repo dir -> runs the PR step in it
   : > "$GITHUB_OUTPUT"; : > "$work/gh.log"
   (cd "$1" && PATH="$fakebin:$PATH" GH_LOG="$work/gh.log" GH_TOKEN=x REPO=o/r GITHUB_SERVER_URL="file://$work/remotes" \
-    BRANCH="b-$(basename "$1")" BASE_BRANCH=master KEY=k TOP_SEVERITY=high LABELS=dependencies,security NEEDS_HUMAN_LABEL=needs-human \
+    BRANCH="b-$(basename "$1")" BASE_BRANCH=master TOP_SEVERITY=high LABELS=dependencies,security NEEDS_HUMAN_LABEL=needs-human \
     AUTO_MERGE=true CLAUDE_EXEC='' RUN_URL=u bash -eo pipefail "$work/pr.sh" > /dev/null 2>&1)
 }
 clean "$r"; open_pr "$r"
@@ -97,6 +98,12 @@ open_pr "$r"
 check "guard failure: draft PR labelled needs-human, auto-merge never enabled" \
   "$(yes bash -c "grep -q -- '--draft' '$work/gh.log' && grep -q 'needs-human' '$work/gh.log' && ! grep -q 'pr merge' '$work/gh.log' && grep -q '^needs-human=true$' '$GITHUB_OUTPUT' && grep -q 'main.go' '$RUNNER_TEMP/pr-body.md'")"
 check "first-pass branch was pushed" "$(yes git -C "$work/remotes/o/r.git" show-ref --verify -q "refs/heads/b-repo-extra")"
+
+r=$(new_repo update)
+sed -i 's/v0.20.0/v0.23.0/' "$r/go.mod"
+clean "$r"; GH_OPEN_PR=https://example.com/o/r/pull/1 open_pr "$r"
+check "open pull request for the branch: updated, not opened again, not reported again" \
+  "$(yes bash -c "grep -q 'pr edit' '$work/gh.log' && ! grep -q 'pr create' '$work/gh.log' && ! grep -q '^pr-url=' '$GITHUB_OUTPUT'")"
 
 r=$(new_repo untracked)
 sed -i 's/v0.20.0/v0.23.0/' "$r/go.mod"
