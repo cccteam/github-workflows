@@ -120,6 +120,12 @@ jobs:
           go-version-file: go.mod
           cache: false
 
+      # setup-go sets GOTOOLCHAIN=local. A standard library fix raises the go directive above the Go that was
+      # set up, and the go command then refuses to run unless it may download the newer toolchain.
+      - name: Let go download a newer toolchain
+        if: hashFiles('go.mod') != ''
+        run: echo "GOTOOLCHAIN=auto" >> "$GITHUB_ENV"
+
       - name: Set up Node
         if: hashFiles('package-lock.json') != ''
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
