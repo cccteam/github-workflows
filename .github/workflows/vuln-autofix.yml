@@ -487,6 +487,23 @@ jobs:
             problem "After the change the fixed versions are not reached: ${unmet[*]}"
           fi
 
+          # A Dockerfile that builds with an older Go image than the new go directive fails to build, and that
+          # build may only run at deployment. Dockerfiles are not changed here, so a human has to bump them.
+          new_go=$(jq -r '.directives.go.new // empty' "$RUNNER_TEMP/changes.json")
+          if [[ -n "$new_go" && "$new_go" != "-" ]]; then
+            old_images=()
+            while IFS=: read -r file tag; do
+              # A tag without a patch version (golang:1.27) follows the newest patch release: compare major.minor
+              want=$new_go
+              [[ "$tag" =~ ^[0-9]+\.[0-9]+$ ]] && want=$(cut -d. -f1,2 <<< "$new_go")
+              ver_ge "$tag" "$want" || old_images+=("$file uses golang:$tag")
+            done < <(git ls-files -z | grep -zE '(^|/)[^/]*Dockerfile[^/]*$' \
+                       | xargs -0 -r grep -HoE 'golang:[0-9]+\.[0-9]+(\.[0-9]+)?' | sed -E 's/:golang:/:/' | sort -u)
+            if [[ ${#old_images[@]} -gt 0 ]]; then
+              problem "The go directive is now $new_go, but a Dockerfile builds with an older Go image and needs the same bump: ${old_images[*]}"
+            fi
+          fi
+
           # The code must still build (tests run in the pull request's own CI)
           build_ok=true
           if [[ -f go.mod ]] && ! go build ./... > "$RUNNER_TEMP/build.log" 2>&1; then

@@ -12,6 +12,7 @@
    - `go.mod` gained no `replace`, `exclude` or `retract`, and `package.json` changed only its dependency sections;
    - no dependency changed major version;
    - the fixed versions are reached, the code still builds (`go build ./...`, `npm ci` and `npm run build --if-present`), and a fresh `govulncheck` run reports no fixable vulnerability. Tests run in the pull request's own CI.
+   - when the `go` directive was raised, no tracked Dockerfile builds with an older `golang:` image tag. Dockerfiles are not changed by the workflow, so this makes the pull request a draft for a human to finish.
 5. **Pull request.**
    - *All guards pass:* a ready pull request with labels, severity, advisory IDs, old to new versions and side effects. With `auto-merge: true` it runs `gh pr merge --auto --squash`, so it merges only when the required checks pass.
    - *A guard fails:* the first-pass fix is kept, pushed, and opened as a **draft** pull request labelled `needs-human` (`needs-human-label`). Its body lists exactly which guards failed and what remains. Auto-merge is never enabled for it.
