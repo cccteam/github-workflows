@@ -152,6 +152,26 @@ check "run without failure: the open failure issue is closed" "$(yes grep -q 'is
 issue_step '' success '[]'
 check "run without failure and nothing open: no issue call besides the list" "$(yes bash -c "[[ \$(wc -l < '$work/gh.log') == 1 ]]")"
 
+step failed-pr
+cat > "$fakebin/gh" <<'GH'
+#!/usr/bin/env bash
+echo "$*" >> "$GH_LOG"
+[[ "$1 $2" == "pr view" ]] && echo "$GH_PR"
+exit 0
+GH
+failed_pr_step() { # pull request JSON -> runs the failed-checks step
+  : > "$GITHUB_OUTPUT"; : > "$work/gh.log"
+  (cd "$r" && PATH="$fakebin:$PATH" GH_LOG="$work/gh.log" GH_PR="$1" GH_TOKEN=x REPO=o/r PR=https://example.com/o/r/pull/1 \
+    NEEDS_HUMAN_LABEL=needs-human RUN_URL=u bash -eo pipefail "$work/failed-pr.sh" > /dev/null 2>&1)
+}
+failed_pr_step '{"isDraft":false,"comments":[],"statusCheckRollup":[{"name":"test","conclusion":"FAILURE"},{"name":"lint","conclusion":"SUCCESS"}]}'
+check "open fix PR with a failed check: commented, labelled and reported" \
+  "$(yes bash -c "grep -q 'pr comment' '$work/gh.log' && grep -q 'add-label needs-human' '$work/gh.log' && grep -q '^pr-url=' '$GITHUB_OUTPUT' && grep -qx 'test' '$RUNNER_TEMP/failed-checks.txt'")"
+failed_pr_step '{"isDraft":false,"comments":[{"body":"<!-- vuln-autofix-checks-failed -->"}],"statusCheckRollup":[{"name":"test","conclusion":"FAILURE"}]}'
+check "failed check that was already reported: not reported again" "$(yes bash -c "! grep -q 'pr comment' '$work/gh.log' && ! grep -q '^pr-url=' '$GITHUB_OUTPUT'")"
+failed_pr_step '{"isDraft":false,"comments":[],"statusCheckRollup":[{"name":"test","conclusion":"SUCCESS"},{"name":"build","status":"IN_PROGRESS","conclusion":""}]}'
+check "open fix PR without failed checks: nothing reported" "$(yes bash -c "! grep -q 'pr comment' '$work/gh.log' && ! grep -q '^pr-url=' '$GITHUB_OUTPUT'")"
+
 r=$(new_repo pkgjson)
 printf '{"name":"a","scripts":{"build":"tsc"},"dependencies":{"x":"1.0.0"}}\n' > "$r/package.json"
 printf '{"packages":{"":{},"node_modules/x":{"version":"1.0.0"}}}\n' > "$r/package-lock.json"

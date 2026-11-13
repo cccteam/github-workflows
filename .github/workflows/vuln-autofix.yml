@@ -250,6 +250,8 @@ jobs:
                 'map(select((.headRefName | startswith($prefix)) and (.body | contains($marker)))) | .[0].url // empty')
           # A run that could not open a pull request records that in an issue. While it is open the same set of
           # vulnerabilities is not tried or reported again; closing it lets the next run try again.
+          # An open fix pull request is checked later for failed checks
+          echo "existing-pr=$existing" >> "$GITHUB_OUTPUT"
           if [[ -z "$existing" ]]; then
             existing=$(gh issue list --repo "$REPO" --state open --limit 100 --json url,body \
               | jq -r --arg marker "vuln-autofix-key: $KEY" 'map(select(.body | contains($marker))) | .[0].url // empty')
@@ -561,6 +563,37 @@ jobs:
           client-id: ${{ secrets.AUTOFIX_APP_CLIENT_ID }}
           private-key: ${{ secrets.AUTOFIX_APP_PEM }}
 
+      # An open fix pull request makes later runs end early. If its checks failed it never merges, and nothing
+      # else would say so. This reports it once.
+      - name: Flag an open fix pull request whose checks failed
+        id: failed-pr
+        if: steps.dedupe.outputs.existing-pr != ''
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR: ${{ steps.dedupe.outputs.existing-pr }}
+          NEEDS_HUMAN_LABEL: ${{ inputs.needs-human-label }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          marker='<!-- vuln-autofix-checks-failed -->'
+          pr=$(gh pr view "$PR" --json isDraft,comments,statusCheckRollup)
+          failed=$(jq -r '[.statusCheckRollup[]?
+                           | select((.conclusion // .state // "") | IN("FAILURE", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED", "STARTUP_FAILURE", "ERROR"))
+                           | (.name // .context // "unnamed check")] | unique | join(", ")' <<< "$pr")
+          if [[ -z "$failed" ]]; then
+            echo "No failed checks on $PR."
+          elif [[ "$(jq -r '.isDraft' <<< "$pr")" == "true" ]]; then
+            echo "$PR is a draft, which was already reported as needing a human."
+          elif jq -e --arg m "$marker" 'any(.comments[]?; .body | contains($m))' <<< "$pr" > /dev/null; then
+            echo "The failed checks on $PR were already reported."
+          else
+            gh label create "$NEEDS_HUMAN_LABEL" --repo "$REPO" > /dev/null 2>&1 || true
+            gh pr edit "$PR" --add-label "$NEEDS_HUMAN_LABEL"
+            gh pr comment "$PR" --body "$marker"$'\n'"Checks failed, so this pull request will not merge by itself and needs a human: $failed"$'\n\n'"Found by $RUN_URL. This is reported once."
+            echo "$failed" > "$RUNNER_TEMP/failed-checks.txt"
+            echo "pr-url=$PR" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Open pull request
         id: pr
         if: steps.guard.outputs.has-diff == 'true'
@@ -735,6 +768,7 @@ jobs:
           CHANNEL: ${{ inputs.slack-channel-id || secrets.SLACK_CHANNEL_ID }}
           JOB_STATUS: ${{ job.status }}
           PR_URL: ${{ steps.pr.outputs.pr-url }}
+          FAILED_PR_URL: ${{ steps.failed-pr.outputs.pr-url }}
           ISSUE_URL: ${{ steps.issue.outputs.issue-url }}
           FAILURE_ALREADY_REPORTED: ${{ steps.issue.outputs.failure-already-reported }}
           NEEDS_HUMAN: ${{ steps.pr.outputs.needs-human }}
@@ -744,7 +778,9 @@ jobs:
         run: |
           read_file() { [[ -f "$RUNNER_TEMP/$1" ]] && cat "$RUNNER_TEMP/$1" || true; }
 
-          if [[ -n "$PR_URL" && "$NEEDS_HUMAN" == "true" ]]; then
+          if [[ -n "$FAILED_PR_URL" ]]; then
+            text=":warning: *Security fix pull request has failed checks and needs a human* in *${REPO}*"$'\n\n'"*Pull request:* ${FAILED_PR_URL}"$'\n'"*Failed checks:* $(read_file failed-checks.txt)"$'\n'"It will not merge by itself, so the vulnerabilities it targets are still open. This is reported once."$'\n\n'"Run: ${RUN_URL}"
+          elif [[ -n "$PR_URL" && "$NEEDS_HUMAN" == "true" ]]; then
             case "$TOP_SEVERITY" in
               critical) header=":rotating_light: *CRITICAL vulnerability: first-pass fix opened, more work needed* in *${REPO}*" ;;
               high) header=":rotating_light: *HIGH severity vulnerability: first-pass fix opened, more work needed* in *${REPO}*" ;;
