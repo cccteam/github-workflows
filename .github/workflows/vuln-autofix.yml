@@ -379,9 +379,12 @@ jobs:
                 ver_ge "${directive:-0}" "$fixed" || ver_ge "${toolchain:-0}" "$fixed" || unmet+=("go directive is ${directive:-unset}, needs $fixed")
                 ;;
               npm)
-                # Copies of the package on another major version are not what the advisory fix targets
+                # A copy on an older major version than the fix is still vulnerable: the fix needs a major change.
+                # A copy on a newer major version is not what this fixed version targets.
                 while read -r cur; do
-                  if [[ "$(major "$cur")" == "$(major "$fixed")" ]] && ! ver_ge "$cur" "$fixed"; then
+                  if (( $(major "$cur") < $(major "$fixed") )); then
+                    unmet+=("$pkg is $cur and the fix is only in a newer major version, $fixed")
+                  elif [[ "$(major "$cur")" == "$(major "$fixed")" ]] && ! ver_ge "$cur" "$fixed"; then
                     unmet+=("$pkg is $cur, needs $fixed")
                   fi
                 done < <(jq -r --arg p "$pkg" '(.packages // {}) | to_entries[] | select(.key == "node_modules/" + $p or (.key | endswith("/node_modules/" + $p))) | .value.version' package-lock.json)

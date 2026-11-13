@@ -124,5 +124,24 @@ printf '[{"ecosystem":"go","package":"golang.org/x/net","fixed":"v0.23.0"},{"eco
 check "bump runs go get for a module and for the go directive, npm install for a direct package and npm update for a transitive one" \
   "$(yes bash -c "grep -qx 'go get golang.org/x/net@v0.23.0' '$work/tool.log' && grep -qx 'go get go@1.27.4' '$work/tool.log' && grep -qx 'npm install direct@1.0.1 --package-lock-only --ignore-scripts' '$work/tool.log' && grep -qx 'npm update transitive --package-lock-only --ignore-scripts' '$work/tool.log'")"
 
+# --- verify -----------------------------------------------------------------------------------------------
+# The npm version check, with fake go and govulncheck
+step verify
+printf '#!/usr/bin/env bash\n' > "$fakebin/govulncheck"; chmod +x "$fakebin/govulncheck"
+: > "$RUNNER_TEMP/gate.jq"; echo '[]' >> "$RUNNER_TEMP/gate.jq"
+echo '{"directives":{},"bumps":[]}' > "$RUNNER_TEMP/changes.json"
+verify() { # installed versions JSON, fixed version -> runs the verify step for npm package x
+  rm -f "$RUNNER_TEMP/problems.txt"
+  printf '[{"ecosystem":"npm","package":"x","fixed":"%s"}]' "$2" > "$RUNNER_TEMP/actionable.json"
+  jq -n --argjson v "$1" '{packages: ($v | to_entries | map({key: .key, value: {version: .value}}) | from_entries)}' > "$r/package-lock.json"
+  (cd "$r" && PATH="$fakebin:$PATH" TOOL_LOG=/dev/null GOVULNCHECK_VERSION=v bash -eo pipefail "$work/verify.sh" > /dev/null 2>&1)
+}
+verify '{"node_modules/x":"2.0.1","node_modules/a/node_modules/x":"3.1.0"}' 2.0.1
+check "npm: fixed version reached, a copy on a newer major is ignored" "$([[ ! -s "$RUNNER_TEMP/problems.txt" ]] && echo true || echo false)"
+verify '{"node_modules/x":"2.0.0"}' 2.0.1
+check "npm: a copy below the fixed version is flagged" "$(yes grep -q 'x is 2.0.0, needs 2.0.1' "$RUNNER_TEMP/problems.txt")"
+verify '{"node_modules/x":"1.0.0"}' 2.0.1
+check "npm: a copy on an older major than the fix is flagged" "$(yes grep -q 'x is 1.0.0 and the fix is only in a newer major version' "$RUNNER_TEMP/problems.txt")"
+
 if [[ $failures -gt 0 ]]; then echo "$failures check(s) failed"; exit 1; fi
 echo "all checks passed"
