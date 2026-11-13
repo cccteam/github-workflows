@@ -63,13 +63,14 @@ on:
 
 permissions: {}
 
-concurrency:
-  group: vuln-autofix-${{ github.repository }}
-  cancel-in-progress: false
-
 jobs:
   autofix:
     name: Vulnerability Autofix
+    # Every trigger of the calling workflow except a closed pull request, which is for the job at the end
+    if: github.event_name != 'pull_request'
+    concurrency:
+      group: vuln-autofix-${{ github.repository }}
+      cancel-in-progress: false
     runs-on: ${{ inputs.runs-on }}
     timeout-minutes: 45
     # Read only: everything that writes uses a GitHub App token created after the bump and the checks have
@@ -488,11 +489,9 @@ jobs:
             } > "$RUNNER_TEMP/body.md"
             publish "$CLEAN" "$BRANCH" "$title" --label dependencies,security
             err=''
+            # Slack hears about this pull request when it merges (the last job), or now when it cannot merge itself
             if [[ "$AUTO_MERGE" == "true" ]] && err=$(gh pr merge "$pr_url" --auto --squash 2>&1); then
               echo "Auto-merge is enabled on $pr_url: it merges once the required checks pass."
-              if [[ "$opened" == "true" ]]; then
-                say ":lock: *Security fix pull request opened* in *${REPO}*: ${pr_url}"$'\n'"Auto-merge is enabled: it merges once the required checks pass."
-              fi
             elif [[ "$opened" == "true" ]]; then
               say ":lock: *Security fix pull request needs a human to merge it* in *${REPO}*: ${pr_url}"$'\n'"Auto-merge is off or could not be enabled${err:+ ($(head -n1 <<< "$err"))}."
             fi
@@ -553,6 +552,45 @@ jobs:
             echo "Nothing to report."
             exit 0
           fi
+
+          payload=$(jq -n --arg channel "$CHANNEL" --arg text "$text" '{channel: $channel, text: $text, unfurl_links: false}')
+          response=$(curl -sS -X POST https://slack.com/api/chat.postMessage \
+            -H "Authorization: Bearer $SLACK_BOT_TOKEN" -H "Content-type: application/json; charset=utf-8" --data "$payload")
+          if [[ "$(jq -r '.ok' <<< "$response")" != "true" ]]; then
+            echo "::error::Slack post failed: $(jq -r '.error // "unknown error"' <<< "$response")"
+            exit 1
+          fi
+
+  # Runs when the calling workflow is triggered by a closed pull request. When that pull request is a merged fix
+  # from this workflow (or the draft that a human finished), Slack is told that the fix is merged.
+  merged:
+    name: Report a merged fix
+    if: >-
+      github.event_name == 'pull_request' && github.event.pull_request.merged
+      && startsWith(github.event.pull_request.head.ref, 'vuln-autofix')
+      && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ${{ inputs.runs-on }}
+    permissions: {}
+    steps:
+      - name: Notify Slack
+        id: merged
+        shell: bash
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          CHANNEL: ${{ inputs.slack-channel-id || secrets.SLACK_CHANNEL_ID }}
+          REPO: ${{ github.repository }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          # The severity and the list of vulnerabilities are read from the body this workflow wrote
+          PR_BODY=${PR_BODY//$'\r'/}
+          case "$(sed -n 's/^Highest severity: \*\*\(.*\)\*\*$/\1/p' <<< "$PR_BODY" | head -n1)" in
+            critical) header=":rotating_light: *CRITICAL vulnerability fix merged* in *${REPO}*" ;;
+            high) header=":rotating_light: *HIGH severity vulnerability fix merged* in *${REPO}*" ;;
+            *) header=":white_check_mark: *Security fix merged* in *${REPO}*" ;;
+          esac
+          vulns=$(awk '/^### Vulnerabilities/ {on = 1; next} /^###/ {on = 0} on && NF' <<< "$PR_BODY")
+          text="${header}"$'\n'"${vulns}"$'\n'"*Pull request:* ${PR_URL}"$'\n'"*Not in production yet:* it needs a deployment."
 
           payload=$(jq -n --arg channel "$CHANNEL" --arg text "$text" '{channel: $channel, text: $text, unfurl_links: false}')
           response=$(curl -sS -X POST https://slack.com/api/chat.postMessage \

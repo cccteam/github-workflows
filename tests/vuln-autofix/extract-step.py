@@ -5,5 +5,5 @@ import yaml
 
 workflow, step_id = sys.argv[1], sys.argv[2]
 with open(workflow, encoding="utf-8") as f:
-    steps = yaml.safe_load(f)["jobs"]["autofix"]["steps"]
-print(next(s["run"] for s in steps if s.get("id") == step_id))
+    jobs = yaml.safe_load(f)["jobs"]
+print(next(s["run"] for job in jobs.values() for s in job["steps"] if s.get("id") == step_id))

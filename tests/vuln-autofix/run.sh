@@ -167,5 +167,17 @@ prs "$r"
 check "package left for a human whose bump changed nothing: no pull request, Slack says so" \
   "$(yes bash -c "! grep -q 'pr create' '$work/gh.log' && grep -q 'No pull request holds a first pass' '$RUNNER_TEMP/slack.txt'")"
 
+check "ready pull request with auto-merge: Slack is not told when it opens" "$(yes bash -c "! grep -q 'Security fix pull request' '$RUNNER_TEMP/slack.txt'")"
+
+# --- merged fix -------------------------------------------------------------------------------------------
+# The Slack step of the job that runs on a merged fix pull request, with a fake curl that records the payload
+step merged
+printf '#!/usr/bin/env bash\nprintf "%%s" "${@: -1}" > "$CURL_LOG"\necho "{\\"ok\\":true}"\n' > "$fakebin/curl"; chmod +x "$fakebin/curl"
+PATH="$fakebin:$PATH" CURL_LOG="$work/slack.json" SLACK_BOT_TOKEN=x CHANNEL=C1 REPO=o/r PR_URL=https://example.com/o/r/pull/1 \
+  PR_BODY="$(printf '## Security fix (automated)\r\n\r\nHighest severity: **critical**\r\n\r\n### Vulnerabilities\r\n- [CRITICAL] CVE-1 `x`: 1.0.0 -> 1.0.1\r\n\r\n### Side effects\r\n- other\r\n')" \
+  bash -eo pipefail "$work/merged.sh" > /dev/null 2>&1
+check "merged fix: Slack names the severity, the vulnerability, the pull request and the deployment, and not the side effects" \
+  "$(jq -r .text "$work/slack.json" | { t=$(cat); [[ "$t" == *"CRITICAL vulnerability fix merged"* && "$t" == *'CVE-1 `x`: 1.0.0 -> 1.0.1'* && "$t" == *"pull/1"* && "$t" == *"needs a deployment"* && "$t" != *other* ]] && echo true || echo false; })"
+
 if [[ $failures -gt 0 ]]; then echo "$failures check(s) failed"; exit 1; fi
 echo "all checks passed"
