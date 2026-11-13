@@ -211,12 +211,14 @@ Docs are generated only for modules. A changed directory with a `backend` or `cl
 
 Each component keeps one root folder per environment, numbered in promotion order, and every folder must hold the same code. Values that differ between environments come from Scalr workspace variables. A resource only some environments need goes behind a variable that turns it on, such as `count = var.enable_cloud_sql ? 1 : 0`.
 
-The `environment-consistency` job finds every folder named `<number>-<code>`, where the code is one of `environment_codes`, and groups the folders by parent directory. It compares each folder with the one before it in promotion order (`1-dev` with `2-tst`, `2-tst` with `4-prd`), so each difference shows up at the step where it starts. Only OpenTofu files are compared (`environment_include_files`: `*.tf`, `*.tf.json` and `.terraform.lock.hcl`), at any depth. A file in one folder and not the other fails the check, and so does any line that differs, except for these:
+The `environment-consistency` job finds every folder named `<number>-<code>`, where the code is one of `environment_codes`, and groups the folders by parent directory. It compares each folder with the one before it in promotion order (`1-dev` with `2-tst`, `2-tst` with `4-prd`), so each difference shows up at the step where it starts. Only OpenTofu files are compared (`environment_include_files`: `*.tf`, `*.tofu`, their `.json` forms and `.terraform.lock.hcl`), at any depth. A file in one folder and not the other fails the check, and so does any line that differs, except for these:
 
 - Quoted values inside the `cloud` or `backend` block of the `terraform` block, and inside `data "scalr_outputs"` blocks, are masked in every file. These hold the Scalr workspace, organization and environment. The block header is still compared, so switching one environment to a different backend type shows up. Values outside those blocks are compared, so an `environment` tag must come from a variable (`environment = var.environment`), not a quoted name.
-- `import`, `moved` and `removed` blocks, and the comment lines directly above them, are skipped in every file. Import IDs differ per environment, and the blocks are deleted once every environment has applied them. A file left with nothing else in it, such as an `import.tf`, counts as absent.
+- `import`, `moved` and `removed` blocks, and the comments (`#`, `//` or `/* */`) directly above them, are skipped in every file. Import IDs differ per environment, and the blocks are deleted once every environment has applied them. A file left with nothing else in it, such as an `import.tf`, counts as absent.
 - Blank lines are skipped. Every other comment is compared like code, so a comment that names one environment fails the check.
 - Files matching `environment_ignore_files` are skipped. It's empty by default.
+
+These exceptions apply to HCL files only. A `.tf.json` or `.tofu.json` file is compared as it is, so a JSON backend block with per-environment values shows up as a difference. Add such a file to `environment_ignore_files` if it needs to differ.
 
 The lock file is compared like any other file, so every environment runs the provider versions the environment before it tested.
 
@@ -239,7 +241,7 @@ The pull request comment lists the files that differ (the first 50) and links to
 | `environment_consistency` | `warn` | `warn`, `fail` or `off` |
 | `environment_working_directory` | `.` | Directory to search |
 | `environment_codes` | `dev,int,tst,uat,stg,prd` | Environment codes whose folders are compared |
-| `environment_include_files` | `*.tf,*.tf.json,.terraform.lock.hcl` | Comma-separated glob patterns, matched against file names, of the files compared |
+| `environment_include_files` | `*.tf,*.tofu,*.tf.json,*.tofu.json,.terraform.lock.hcl` | Comma-separated glob patterns, matched against file names, of the files compared |
 | `environment_ignore_files` | | Comma-separated glob patterns, matched against file names, left out |
 
 ### Terraform Security Scan Example

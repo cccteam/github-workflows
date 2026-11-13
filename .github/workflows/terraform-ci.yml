@@ -22,12 +22,14 @@
 #     - Quoted values inside the cloud or backend block of the terraform block
 #       and inside scalr_outputs data sources, in any file: the Scalr workspace,
 #       organization and environment.
-#     - import, moved and removed blocks, with the comment lines directly above
-#       them. Import IDs differ per environment, and the blocks are deleted once
+#     - import, moved and removed blocks, with the comments (#, // or /* */)
+#       directly above them. Import IDs differ per environment, and the blocks are deleted once
 #       every environment has applied them. A file left with nothing else in it
 #       counts as absent.
 #     - Blank lines. Every other comment is compared like code.
 #     - Files matching environment_ignore_files.
+#    These exceptions apply to HCL files only. JSON files (.tf.json, .tofu.json)
+#    are compared as they are.
 #    It checks the whole repository, not only the folders a pull request
 #    changed. A module repository has no environment folders and passes.
 #
@@ -104,7 +106,7 @@ on:
         description: 'Comma-separated glob patterns, matched against file names at any depth, of the files the environment comparison covers'
         required: false
         type: string
-        default: '*.tf,*.tf.json,.terraform.lock.hcl'
+        default: '*.tf,*.tofu,*.tf.json,*.tofu.json,.terraform.lock.hcl'
       environment_ignore_files:
         description: 'Comma-separated glob patterns, matched against file names at any depth, left out of the environment comparison'
         required: false
@@ -137,7 +139,7 @@ jobs:
       - name: Check for Terraform file changes
         id: check-changes
         run: |
-          CHANGED_FILES=$(git diff --name-only --diff-filter=ACMRTUXB origin/${{ github.base_ref }}...HEAD | grep -E '\.tf$|\.tfvars$' || true)
+          CHANGED_FILES=$(git diff --name-only --diff-filter=ACMRTUXB origin/${{ github.base_ref }}...HEAD | grep -E '\.(tf|tofu|tfvars)$' || true)
           if [ -z "$CHANGED_FILES" ]; then
             echo "No .tf or .tfvars files changed. Skipping terraform-docs."
             echo "has_changes=false" >> $GITHUB_OUTPUT
@@ -185,7 +187,7 @@ jobs:
         id: changed-files
         run: |
           # Get changed .tf and .tfvars files
-          CHANGED_FILES=$(git diff --name-only --diff-filter=ACMRTUXB origin/${{ github.base_ref }}...HEAD | grep -E '\.tf$|\.tfvars$' || true)
+          CHANGED_FILES=$(git diff --name-only --diff-filter=ACMRTUXB origin/${{ github.base_ref }}...HEAD | grep -E '\.(tf|tofu|tfvars)$' || true)
           if [ -z "$CHANGED_FILES" ]; then
             echo "No .tf or .tfvars files changed. Skipping format check."
             echo "changed=false" >> $GITHUB_OUTPUT
@@ -429,6 +431,11 @@ jobs:
           level=warning
           [[ $MODE == warn ]] || level=error
 
+          if [[ ! -d $WORKING_DIRECTORY ]]; then
+            echo "::error::environment_working_directory '$WORKING_DIRECTORY' isn't a directory."
+            exit 1
+          fi
+
           summary="${GITHUB_STEP_SUMMARY:-/dev/null}"
           # The file list for the pull request comment.
           findings="${RUNNER_TEMP:?}/environment-consistency.md"
@@ -450,14 +457,28 @@ jobs:
             return 1
           }
 
+          # An awk function shared by both passes of normalized: the marker of a
+          # heredoc that a line opens (<<EOT or <<-EOT at the end), or "".
+          # shellcheck disable=SC2016 # awk code, expanded by awk
+          heredoc_start='
+            function heredoc_start(text) {
+              if (!match(text, /<<-?[A-Za-z_][A-Za-z0-9_]*[[:space:]]*$/)) return ""
+              text = substr(text, RSTART)
+              sub(/^<<-?/, "", text)
+              sub(/[[:space:]]+$/, "", text)
+              return text
+            }
+          '
+
           # A file's content, with what may differ removed: the quoted strings
           # inside a cloud or backend block of the terraform block and inside a
           # scalr_outputs data source, import, moved and removed blocks with the
-          # comment lines directly above them, and blank lines. Other comments
-          # stay. tofu fmt starts and ends top-level blocks in the first column.
+          # comments directly above them, and blank lines. Other comments stay,
+          # and heredoc text is never read as code. tofu fmt starts and ends
+          # top-level blocks in the first column.
           normalized() {
             local dir=$1 file=$2
-            awk '
+            awk "$heredoc_start"'
               # Braces opened minus braces closed, outside strings and comments.
               function depth_change(text) {
                 gsub(/"([^"\\]|\\.)*"/, "", text)
@@ -467,6 +488,14 @@ jobs:
               function mask(text) {
                 gsub(/"([^"\\]|\\.)*"/, "\"<per-environment>\"", text)
                 return text
+              }
+              # Heredoc text is copied as is, braces and all.
+              heredoc != "" {
+                end = $0
+                gsub(/^[[:space:]]+|[[:space:]]+$/, "", end)
+                if (end == heredoc) heredoc = ""
+                print (masking ? mask($0) : $0)
+                next
               }
               {
                 line = $0
@@ -484,15 +513,26 @@ jobs:
                 depth += depth_change($0)
                 if (depth == 0) in_terraform = 0
                 if (masking && depth <= masked_depth) masking = 0
+                heredoc = heredoc_start($0)
                 print line
               }
-            ' "$dir/$file" | awk '
-              skip { if (/^}/) skip = 0; next }
+            ' "$dir/$file" | awk "$heredoc_start"'
+              # Inside a heredoc, keep every line, unless it is in a skipped block.
+              heredoc != "" {
+                end = $0
+                gsub(/^[[:space:]]+|[[:space:]]+$/, "", end)
+                if (end == heredoc) heredoc = ""
+                if (!skip) print
+                next
+              }
+              in_comment { held = held $0 "\n"; if (/\*\//) in_comment = 0; next }
+              skip { if (/^}/) skip = 0; else heredoc = heredoc_start($0); next }
               /^[[:space:]]*(#|\/\/)/ { held = held $0 "\n"; next }
+              /^[[:space:]]*\/\*/ { held = held $0 "\n"; if (!/\*\//) in_comment = 1; next }
               /^(import|moved|removed)[[:space:]]*\{/ { held = ""; if (!/}[[:space:]]*$/) skip = 1; next }
               { printf "%s", held; held = "" }
               NF == 0 { next }
-              { print }
+              { heredoc = heredoc_start($0); print }
               END { printf "%s", held }
             '
           }
