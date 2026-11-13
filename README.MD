@@ -192,8 +192,8 @@ jobs:
       tofu_version: '1.13.9' # Optional: the OpenTofu version tofu fmt runs at
       upload_sarif: false    # Optional: Upload security results to GitHub Security
     secrets:
-      app_client_id: ${{ secrets.TERRAFORM_APP_CLIENT_ID }}
-      app_pem: ${{ secrets.TERRAFORM_APP_PEM }}
+      app_client_id: ${{ secrets.IAC_APP_CLIENT_ID }}
+      app_pem: ${{ secrets.IAC_APP_PEM }}
     permissions:
       actions: read
       contents: write
