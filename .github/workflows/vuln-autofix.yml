@@ -22,16 +22,6 @@ on:
         type: boolean
         default: true
         description: Enable auto-merge (squash) on the pull request so it merges once the required checks pass
-      pr-labels:
-        required: false
-        type: string
-        default: 'dependencies,security'
-        description: Comma-separated labels for the pull request (created if missing)
-      needs-human-label:
-        required: false
-        type: string
-        default: 'needs-human'
-        description: Label for the draft pull request opened when a guard failed and more work is needed (created if missing)
       go-private:
         required: false
         type: string
@@ -459,8 +449,6 @@ jobs:
           REPO: ${{ github.repository }}
           BASE_BRANCH: ${{ github.ref_name }}
           TOP_SEVERITY: ${{ steps.gate.outputs.top-severity }}
-          LABELS: ${{ inputs.pr-labels }}
-          NEEDS_HUMAN_LABEL: ${{ inputs.needs-human-label }}
           AUTO_MERGE: ${{ inputs.auto-merge }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
@@ -518,14 +506,13 @@ jobs:
             echo "Workflow run: $RUN_URL"
           } > "$RUNNER_TEMP/pr-body.md"
 
-          all_labels="$LABELS"
+          labels=dependencies,security
           draft=()
           if [[ "$needs_human" == "true" ]]; then
-            all_labels="${all_labels:+$all_labels,}$NEEDS_HUMAN_LABEL"
+            labels+=,needs-human
             draft=(--draft)
           fi
-          IFS=',' read -ra labels <<< "$all_labels"
-          for l in "${labels[@]}"; do
+          for l in ${labels//,/ }; do
             gh label create "$l" --repo "$REPO" > /dev/null 2>&1 || true
           done
           pr_url=$(gh pr list --repo "$REPO" --head "$BRANCH" --state open --json url --jq '.[0].url // empty')
@@ -534,7 +521,7 @@ jobs:
             gh pr edit "$pr_url" --title "$title" --body-file "$RUNNER_TEMP/pr-body.md"
           else
             pr_url=$(gh pr create --repo "$REPO" --base "$BASE_BRANCH" --head "$BRANCH" --title "$title" \
-              --body-file "$RUNNER_TEMP/pr-body.md" --label "$all_labels" "${draft[@]}" | tail -n1)
+              --body-file "$RUNNER_TEMP/pr-body.md" --label "$labels" "${draft[@]}" | tail -n1)
             {
               echo "pr-url=$pr_url"
               echo "needs-human=$needs_human"

@@ -83,7 +83,7 @@ chmod +x "$fakebin/gh"
 open_pr() { # repo dir -> runs the PR step in it
   : > "$GITHUB_OUTPUT"; : > "$work/gh.log"
   (cd "$1" && PATH="$fakebin:$PATH" GH_LOG="$work/gh.log" GH_TOKEN=x REPO=o/r GITHUB_SERVER_URL="file://$work/remotes" \
-    BRANCH="b-$(basename "$1")" BASE_BRANCH=master TOP_SEVERITY=high LABELS=dependencies,security NEEDS_HUMAN_LABEL=needs-human \
+    BRANCH="b-$(basename "$1")" BASE_BRANCH=master TOP_SEVERITY=high \
     AUTO_MERGE=true RUN_URL=u bash -eo pipefail "$work/pr.sh" > /dev/null 2>&1)
 }
 clean "$r"; open_pr "$r"
