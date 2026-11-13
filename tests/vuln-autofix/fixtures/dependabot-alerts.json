@@ -1,0 +1,14 @@
+[
+  {"security_advisory": {"ghsa_id": "GHSA-aaaa-bbbb-cccc", "cve_id": "CVE-2026-0001", "severity": "high"},
+   "security_vulnerability": {"first_patched_version": {"identifier": "0.23.0"}},
+   "dependency": {"package": {"ecosystem": "go", "name": "golang.org/x/net"}}},
+  {"security_advisory": {"ghsa_id": "GHSA-dddd-eeee-ffff", "cve_id": null, "severity": "critical"},
+   "security_vulnerability": {"first_patched_version": null},
+   "dependency": {"package": {"ecosystem": "npm", "name": "unfixed-pkg"}}},
+  {"security_advisory": {"ghsa_id": "GHSA-gggg-hhhh-iiii", "cve_id": null, "severity": "critical"},
+   "security_vulnerability": {"first_patched_version": {"identifier": "2.0.1"}},
+   "dependency": {"package": {"ecosystem": "pip", "name": "not-supported"}}},
+  {"security_advisory": {"ghsa_id": "GHSA-jjjj-kkkk-llll", "cve_id": null, "severity": "low"},
+   "security_vulnerability": {"first_patched_version": {"identifier": "1.2.3; rm -rf /"}},
+   "dependency": {"package": {"ecosystem": "go", "name": "evil/pkg"}}}
+]
