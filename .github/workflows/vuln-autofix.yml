@@ -42,11 +42,6 @@ on:
         type: string
         default: 'v1.9.0'
         description: Version of govulncheck to use
-      node-version:
-        required: false
-        type: string
-        default: 'lts/*'
-        description: Node.js version used to build and test npm projects (ignored without a package-lock.json)
       slack-channel-id:
         required: false
         type: string
@@ -115,12 +110,6 @@ jobs:
       - name: Let go download a newer toolchain
         if: hashFiles('go.mod') != ''
         run: echo "GOTOOLCHAIN=auto" >> "$GITHUB_ENV"
-
-      - name: Set up Node
-        if: hashFiles('package-lock.json') != ''
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: ${{ inputs.node-version }}
 
       # ---- Step A: deterministic gate -------------------------------------------------------------------------
 
@@ -430,15 +419,12 @@ jobs:
             fi
           fi
 
-          # The code must still build (tests run in the pull request's own CI)
+          # The Go code must still build. Nothing from npm is installed or run here: that would run code from the
+          # bumped packages in this job. The pull request's own checks build and test.
           build_ok=true
           if [[ -f go.mod ]] && ! go build ./... > "$RUNNER_TEMP/build.log" 2>&1; then
             build_ok=false
             problem "go build fails after the change: $(tail -n 3 "$RUNNER_TEMP/build.log" | tr '\n' ' ')"
-          fi
-          if [[ -f package-lock.json ]] && ! { npm ci && npm run build --if-present; } > "$RUNNER_TEMP/npm-build.log" 2>&1; then
-            build_ok=false
-            problem "the npm install or build fails after the change: $(tail -n 3 "$RUNNER_TEMP/npm-build.log" | tr '\n' ' ')"
           fi
 
           # Dependabot alerts only clear after the merge, so govulncheck is what can be re-run here
