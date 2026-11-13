@@ -169,9 +169,14 @@ jobs:
           def ok_ver: type == "string" and test("^v?[0-9][0-9A-Za-z.+-]*$");
           def ok_id: type == "string" and test("^[A-Za-z0-9-]+$");
 
+          # Only the manifests at the repository root are fixed here, so an alert for a manifest in a
+          # subdirectory is left alone. An alert without a manifest path is kept.
+          def root_manifest: . == null or test("^(go\\.mod|go\\.sum|package\\.json|package-lock\\.json)$");
+
           ($alerts[0] // []
             | map(select(.security_vulnerability.first_patched_version.identifier != null
-                         and (.dependency.package.ecosystem as $e | $ecosystems | index($e)))
+                         and (.dependency.package.ecosystem as $e | $ecosystems | index($e))
+                         and (.dependency.manifest_path | root_manifest))
                   | {source: "dependabot",
                      ecosystem: .dependency.package.ecosystem,
                      package: .dependency.package.name,

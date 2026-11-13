@@ -29,6 +29,7 @@ check "unfixed Dependabot alert is skipped" "$(has 'any(.package == "unfixed-pkg
 check "unfixed govulncheck finding is skipped" "$(has 'any(.package == "example.com/unfixed") | not')"
 check "module-level (not called) finding is skipped" "$(has 'any(.package == "example.com/not-called") | not')"
 check "unsupported ecosystem is skipped" "$(has 'any(.package == "not-supported") | not')"
+check "alert for a manifest in a subdirectory is skipped" "$(has 'any(.package == "example.com/in-subdirectory") | not')"
 check "fixed version with shell metacharacters is dropped" "$(has 'any(.package == "evil/pkg") | not')"
 check "fixed Dependabot alert and govulncheck finding merge into one entry" \
   "$(has 'map(select(.package == "golang.org/x/net")) | length == 1 and .[0].fixed == "v0.23.0" and .[0].severity == "high" and (.[0].sources | length == 2)')"

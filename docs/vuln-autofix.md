@@ -18,7 +18,7 @@
    - *The bump produced no change at all:* no pull request; Slack says a fix exists but needs a human.
 6. **Slack.** One message, only after action. Critical and high severity are called out at the top. It carries the vulnerabilities, how they were addressed, the PR link, the merge status, "needs deployment to reach production" and any side effects (a changed `go` directive or toolchain, indirect dependencies). For a draft first-pass fix it says more work is needed and why. An unexpected workflow failure also posts.
 
-Supported: a Go module and/or an npm `package-lock.json` at the repository root. Other ecosystems, other lockfiles (bun, yarn, pnpm) and multi-module repositories are ignored for now, so the run stays silent for them.
+Supported: a Go module and/or an npm `package-lock.json` at the repository root. Other ecosystems, other lockfiles (bun, yarn, pnpm) and manifests in subdirectories are ignored for now: a Dependabot alert whose manifest is not at the repository root is skipped, so the run stays silent for it.
 
 ## Caller example
 
