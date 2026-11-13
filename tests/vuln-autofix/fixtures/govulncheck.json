@@ -1,0 +1,9 @@
+{"config": {"protocol_version": "v1.0.0"}}
+{"osv": {"id": "GO-2026-0100", "aliases": ["CVE-2026-0001", "GHSA-aaaa-bbbb-cccc"]}}
+{"osv": {"id": "GO-2026-6859", "aliases": ["CVE-2026-6859"]}}
+{"osv": {"id": "GO-2026-0200", "aliases": ["CVE-2026-0200"]}}
+{"osv": {"id": "GO-2026-0300", "aliases": []}}
+{"finding": {"osv": "GO-2026-0100", "fixed_version": "v0.23.0", "trace": [{"module": "golang.org/x/net", "version": "v0.20.0", "function": "Parse"}]}}
+{"finding": {"osv": "GO-2026-6859", "fixed_version": "v1.27.4", "trace": [{"module": "stdlib", "version": "v1.27.1", "function": "ReadAll"}]}}
+{"finding": {"osv": "GO-2026-0200", "fixed_version": "", "trace": [{"module": "example.com/unfixed", "version": "v1.0.0", "function": "Do"}]}}
+{"finding": {"osv": "GO-2026-0300", "fixed_version": "v1.5.0", "trace": [{"module": "example.com/not-called", "version": "v1.0.0"}]}}

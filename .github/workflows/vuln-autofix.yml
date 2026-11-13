@@ -1,0 +1,599 @@
+# This workflow fixes dependency vulnerabilities that have a published fix, without a human in the loop.
+#  1. It collects open Dependabot alerts and govulncheck findings and keeps only those with a published fixed
+#     version. Nothing to fix: the run ends silently. A vulnerability with no published fix is never touched.
+#  2. A script bumps each of those packages to its minimum fixed version with go get or npm, and checks it: no
+#     major version change, the fixed version is reached, and govulncheck no longer reports it.
+#  3. The packages that pass go to one pull request with auto-merge. The packages that do not pass go to a
+#     separate DRAFT pull request labelled needs-human, with a first-pass bump and the reason for each.
+#  4. Slack is told when a fix pull request is merged, when packages are left for a human, and when a run fails.
+#
+# See docs/vuln-autofix.md for the setup prerequisites (tokens, branch protection) and a caller example.
+#
+# NOTE: This workflow has required secrets. Refer to the 'inputs' & 'secrets' sections below.
+name: Vulnerability Autofix Template
+
+on:
+  workflow_call:
+    inputs:
+      auto-merge:
+        required: false
+        type: boolean
+        default: true
+        description: Enable auto-merge (squash) on the pull request so it merges once the required checks pass
+      go-private:
+        required: false
+        type: string
+        default: ''
+        description: GOPRIVATE value for private Go modules, e.g. 'github.com/my-org/*'. Needs the GO_PRIVATE_MODULES_TOKEN secret.
+      govulncheck-version:
+        required: false
+        type: string
+        default: 'v1.9.0'
+        description: Version of govulncheck to use
+      slack-channel-id:
+        required: false
+        type: string
+        description: Overrides secrets.SLACK_CHANNEL_ID as the channel ID for notifications
+      runs-on:
+        required: false
+        type: string
+        default: 'ubuntu-latest'
+
+    secrets:
+      DEPENDABOT_ALERTS_TOKEN:
+        required: true
+        description: Token that can read Dependabot alerts (GITHUB_TOKEN cannot). The same secret golang-security-scan uses.
+      AUTOFIX_APP_CLIENT_ID:
+        required: true
+        description: Client ID of the GitHub App that pushes the branch and opens the pull request. A pull request opened with GITHUB_TOKEN does not trigger workflows, so its checks would never run. The app needs Contents and Pull requests write access on the repository.
+      AUTOFIX_APP_PEM:
+        required: true
+        description: Private key of that GitHub App
+      GO_PRIVATE_MODULES_TOKEN:
+        required: false
+        description: Read-only token that can clone the private Go modules named by the 'go-private' input. It must not have write access.
+      SLACK_BOT_TOKEN:
+        required: true
+        description: Token for sending Slack notifications
+      SLACK_CHANNEL_ID:
+        required: true
+        description: Channel ID for Slack notifications. This can be overridden by the 'slack-channel-id' input.
+
+permissions: {}
+
+jobs:
+  autofix:
+    name: Vulnerability Autofix
+    # Every trigger of the calling workflow except a closed pull request, which is for the job at the end
+    if: github.event_name != 'pull_request'
+    concurrency:
+      group: vuln-autofix-${{ github.repository }}
+      cancel-in-progress: false
+    runs-on: ${{ inputs.runs-on }}
+    timeout-minutes: 45
+    # Read only: everything that writes uses a GitHub App token created after the bump and the checks have
+    # finished, so no token that can write exists while go and npm run.
+    permissions:
+      contents: read
+      pull-requests: read
+    defaults:
+      run:
+        shell: bash
+    env:
+      # One branch and one pull request. Each run that has a fix replaces the branch and updates the pull request.
+      BRANCH: vuln-autofix
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        if: hashFiles('go.mod') != ''
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      # setup-go sets GOTOOLCHAIN=local. A standard library fix raises the go directive above the Go that was
+      # set up, and the go command then refuses to run unless it may download the newer toolchain.
+      - name: Let go download a newer toolchain
+        if: hashFiles('go.mod') != ''
+        run: echo "GOTOOLCHAIN=auto" >> "$GITHUB_ENV"
+
+      # ---- Step A: deterministic gate -------------------------------------------------------------------------
+
+      - name: Collect Dependabot alerts
+        env:
+          GH_TOKEN: ${{ secrets.DEPENDABOT_ALERTS_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh api --paginate "repos/${REPO}/dependabot/alerts?state=open&per_page=100" | jq -s 'add // []' > "$RUNNER_TEMP/dependabot-alerts.json"
+
+      - name: Run govulncheck
+        if: hashFiles('go.mod') != ''
+        env:
+          GOVULNCHECK_VERSION: ${{ inputs.govulncheck-version }}
+          # Credentials for private Go modules, only when GO_PRIVATE_MODULES_TOKEN is set. They are passed as
+          # environment variables to the steps that download modules, and are never written to a file.
+          GOPRIVATE: ${{ inputs.go-private }}
+          GIT_CONFIG_COUNT: ${{ secrets.GO_PRIVATE_MODULES_TOKEN != '' && '1' || '0' }}
+          GIT_CONFIG_KEY_0: url.https://x-access-token:${{ secrets.GO_PRIVATE_MODULES_TOKEN }}@github.com/.insteadOf
+          GIT_CONFIG_VALUE_0: https://github.com/
+        run: |
+          go install "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}"
+          govulncheck -format json ./... > "$RUNNER_TEMP/govulncheck.json"
+
+      - name: Select actionable vulnerabilities
+        id: gate
+        run: |
+          touch "$RUNNER_TEMP/govulncheck.json"
+          ecosystems=()
+          [[ -f go.mod ]] && ecosystems+=(go)
+          [[ -f package-lock.json ]] && ecosystems+=(npm)
+          ecosystems_json=$(jq -nc '$ARGS.positional' --args "${ecosystems[@]}")
+
+          # Actionable means a published fixed version exists. Unfixed vulnerabilities never make the list.
+          # Only a Dependabot alert's package name, versions and advisory IDs are used, and only when they match a
+          # strict character set, because they become arguments of go and npm commands.
+          cat > "$RUNNER_TEMP/gate.jq" <<'JQ'
+          def rank: ({"critical": 4, "high": 3, "medium": 2, "moderate": 2, "low": 1}[ascii_downcase] // 0);
+          def vkey: [scan("[0-9]+") | tonumber];
+          def maxver: sort_by(vkey) | last;
+          def ok_name: type == "string" and test("^[A-Za-z0-9@/._~+-]+$");
+          def ok_ver: type == "string" and test("^v?[0-9][0-9A-Za-z.+-]*$");
+          def ok_id: type == "string" and test("^[A-Za-z0-9-]+$");
+
+          # Only the manifests at the repository root are fixed here, so an alert for a manifest in a
+          # subdirectory is left alone. An alert without a manifest path is kept.
+          def root_manifest: . == null or test("^(go\\.mod|go\\.sum|package\\.json|package-lock\\.json)$");
+
+          ($alerts[0] // []
+            | map(select(.security_vulnerability.first_patched_version.identifier != null
+                         and (.dependency.package.ecosystem as $e | $ecosystems | index($e))
+                         and (.dependency.manifest_path | root_manifest))
+                  | {source: "dependabot",
+                     ecosystem: .dependency.package.ecosystem,
+                     package: .dependency.package.name,
+                     ids: ([.security_advisory.ghsa_id, .security_advisory.cve_id] | map(select(. != null))),
+                     severity: ((.security_advisory.severity // "unknown") | ascii_downcase),
+                     # Go versions carry a leading v, which Dependabot leaves off
+                     fixed: (.dependency.package.ecosystem as $e | .security_vulnerability.first_patched_version.identifier
+                             | if $e == "go" and (startswith("v") | not) then "v" + . else . end)})) as $dependabot
+          | ($govulncheck | map(select(.osv) | .osv) | INDEX(.id)) as $osv
+          # A finding with a function in its trace is a vulnerable symbol the code calls (what govulncheck's text
+          # mode reports). It needs a fixed_version to be actionable.
+          | ($govulncheck | map(select(.finding) | .finding) | group_by([.osv, .trace[0].module])
+              | map(select(any(.[]; .trace[0].function != null) and (.[0].fixed_version // "") != "")
+                    | .[0] as $f
+                    | {source: "govulncheck",
+                       ecosystem: (if $f.trace[0].module == "stdlib" then "go-stdlib" else "go" end),
+                       package: $f.trace[0].module,
+                       ids: (([$f.osv] + ($osv[$f.osv].aliases // []))
+                             | map(select(startswith("CVE-") or startswith("GHSA-") or startswith("GO-")))),
+                       severity: "unknown",
+                       fixed: $f.fixed_version})) as $go
+          | ($dependabot + $go)
+          | map(select((.package | ok_name) and (.fixed | ok_ver) and (.ids | all(ok_id))))
+          | group_by([.ecosystem, .package])
+          | map({ecosystem: .[0].ecosystem,
+                 package: .[0].package,
+                 ids: (map(.ids[]) | unique),
+                 severity: (map(.severity) | max_by(rank)),
+                 fixed: (map(.fixed) | maxver),
+                 sources: (map(.source) | unique)})
+          | sort_by(-(.severity | rank))
+          JQ
+
+          jq -n --slurpfile alerts "$RUNNER_TEMP/dependabot-alerts.json" \
+                --slurpfile govulncheck "$RUNNER_TEMP/govulncheck.json" \
+                --argjson ecosystems "$ecosystems_json" \
+                -f "$RUNNER_TEMP/gate.jq" > "$RUNNER_TEMP/actionable.json"
+
+          count=$(jq length "$RUNNER_TEMP/actionable.json")
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+          echo "Actionable vulnerabilities: $count"
+          jq -r '.[] | "- [\(.severity | ascii_upcase)] \(.ids | join(", ")) `\(.package)` (fix: \(.fixed))"' "$RUNNER_TEMP/actionable.json"
+
+      # ---- Step B: bump and check, one package at a time --------------------------------------------------------
+
+      - name: Bump each package and check the result
+        id: fix
+        if: steps.gate.outputs.count != '0'
+        env:
+          GOPRIVATE: ${{ inputs.go-private }}
+          GIT_CONFIG_COUNT: ${{ secrets.GO_PRIVATE_MODULES_TOKEN != '' && '1' || '0' }}
+          GIT_CONFIG_KEY_0: url.https://x-access-token:${{ secrets.GO_PRIVATE_MODULES_TOKEN }}@github.com/.insteadOf
+          GIT_CONFIG_VALUE_0: https://github.com/
+        run: |
+          # ver_ge A B: version A is at least version B
+          ver_ge() { [[ "$(printf '%s\n%s\n' "${2#v}" "${1#v}" | sort -V | head -n1)" == "${2#v}" ]]; }
+          major() { local v=${1#v}; echo "${v%%.*}"; }
+          # Every installed version of an npm package
+          npm_versions() {
+            jq -r --arg p "$1" '(.packages // {}) | to_entries[] | select(.key == "node_modules/" + $p or (.key | endswith("/node_modules/" + $p))) | .value.version' package-lock.json
+          }
+
+          # bump ECOSYSTEM PACKAGE FIXED: raises one package to its minimum fixed version. npm changes only
+          # package.json and the lock file: nothing is installed, so no package install script runs.
+          bump() {
+            case "$1" in
+              go) go get "$2@$3" && go mod tidy ;;
+              go-stdlib) go get "go@${3#v}" && go mod tidy ;;
+              npm)
+                # A direct dependency is set to the fixed version and keeps an exact pin exact. Any other package
+                # is updated within the ranges that the packages depending on it allow.
+                spec=$(jq -r --arg p "$2" '[.dependencies, .devDependencies, .optionalDependencies | objects | .[$p] // empty][0] // ""' package.json)
+                if [[ "$spec" =~ ^[0-9] ]]; then
+                  npm install "$2@$3" --package-lock-only --ignore-scripts --save-exact
+                elif [[ -n "$spec" ]]; then
+                  npm install "$2@$3" --package-lock-only --ignore-scripts
+                else
+                  npm update "$2" --package-lock-only --ignore-scripts
+                fi ;;
+            esac
+          }
+
+          # try ECOSYSTEM PACKAGE FIXED: bumps one package and checks the result. When the package has to be left
+          # for a human it returns 1 with the cause in $reason.
+          try() {
+            local eco=$1 pkg=$2 fixed=$3 cur old_images
+
+            # A major version change is not made unattended
+            case "$eco" in
+              go)
+                cur=$(go list -m -f '{{.Version}}' "$pkg" 2>/dev/null || true)
+                # Dependabot can name a package path that is not a module path
+                [[ -n "$cur" ]] || { reason="its current version could not be read"; return 1; }
+                [[ "$(major "$cur")" == "$(major "$fixed")" ]] || { reason="the fix is a major version change, $cur to $fixed"; return 1; }
+                ;;
+              npm)
+                # A copy on an older major version than the fix is still vulnerable. A copy on a newer major
+                # version is not what this fixed version targets.
+                while read -r cur; do
+                  if (( $(major "$cur") < $(major "$fixed") )); then
+                    reason="the fix is a major version change, $cur to $fixed"; return 1
+                  fi
+                done < <(npm_versions "$pkg")
+                ;;
+            esac
+
+            if ! bump "$eco" "$pkg" "$fixed" 2>&1 | tee "$RUNNER_TEMP/bump.log"; then
+              reason="the version bump failed: $(tail -n 3 "$RUNNER_TEMP/bump.log" | tr '\n' ' ')"; return 1
+            fi
+
+            # The fixed version must be reached
+            case "$eco" in
+              go)
+                cur=$(go list -m -f '{{.Version}}' "$pkg" 2>/dev/null || true)
+                ver_ge "${cur:-0}" "$fixed" || { reason="it is ${cur:-unreadable} after the bump"; return 1; }
+                ;;
+              go-stdlib)
+                cur=$(go mod edit -json | jq -r '.Go // "0"')
+                ver_ge "$cur" "$fixed" || { reason="the go directive is $cur after the bump"; return 1; }
+                # A Dockerfile that builds with an older Go image than the new go directive fails to build, and
+                # that build may only run at deployment. Dockerfiles are not changed here. A tag without a
+                # patch version (golang:1.27) follows the newest patch release, so it is compared by major.minor.
+                old_images=$(git ls-files -z | grep -zE '(^|/)[^/]*Dockerfile[^/]*$' \
+                  | xargs -0 -r grep -HoE 'golang:[0-9]+\.[0-9]+(\.[0-9]+)?' | sed -E 's/:golang:/:/' | sort -u \
+                  | while IFS=: read -r file tag; do
+                      want=$cur
+                      [[ "$tag" =~ ^[0-9]+\.[0-9]+$ ]] && want=$(cut -d. -f1,2 <<< "$cur")
+                      ver_ge "$tag" "$want" || printf '%s uses golang:%s ' "$file" "$tag"
+                    done)
+                [[ -z "$old_images" ]] || { reason="the go directive is now $cur, but a Dockerfile builds with an older Go image and needs the same bump: $old_images"; return 1; }
+                ;;
+              npm)
+                while read -r cur; do
+                  if [[ "$(major "$cur")" == "$(major "$fixed")" ]] && ! ver_ge "$cur" "$fixed"; then
+                    reason="a copy is still $cur after the bump"; return 1
+                  fi
+                done < <(npm_versions "$pkg")
+                ;;
+            esac
+
+            # govulncheck compiles the code, so it also fails when the bump broke the build
+            if [[ "$eco" != "npm" ]]; then
+              if ! govulncheck -format json ./... > "$RUNNER_TEMP/govulncheck-after.json" 2> "$RUNNER_TEMP/govulncheck.log"; then
+                reason="govulncheck could not run after the bump, so the code may no longer build: $(tail -n 3 "$RUNNER_TEMP/govulncheck.log" | tr '\n' ' ')"; return 1
+              fi
+              if jq -n --slurpfile alerts <(echo '[]') --slurpfile govulncheck "$RUNNER_TEMP/govulncheck-after.json" \
+                   --argjson ecosystems '["go"]' -f "$RUNNER_TEMP/gate.jq" | jq -e --arg p "$pkg" 'any(.package == $p)' > /dev/null; then
+                reason="govulncheck still reports it after the bump"; return 1
+              fi
+            fi
+          }
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          base=$(git rev-parse HEAD)
+
+          # Each package that passes becomes one commit. A package that does not pass is undone, so it cannot
+          # hold back the others.
+          : > "$RUNNER_TEMP/reasons.jsonl"
+          while IFS=$'\t' read -r -u 3 eco pkg fixed; do
+            echo "::group::$pkg to $fixed"
+            reason=''
+            if try "$eco" "$pkg" "$fixed"; then
+              git diff --quiet || git commit -qam "fix(deps): bump $pkg to $fixed"
+            else
+              git reset -q --hard
+              echo "::warning::$pkg is left for a human: $reason"
+            fi
+            jq -nc --arg e "$eco" --arg p "$pkg" --arg r "$reason" '{ecosystem: $e, package: $p, reason: $r}' >> "$RUNNER_TEMP/reasons.jsonl"
+            echo "::endgroup::"
+          done 3< <(jq -r '.[] | [.ecosystem, .package, .fixed] | @tsv' "$RUNNER_TEMP/actionable.json")
+          clean=$(git rev-parse HEAD)
+
+          # fixed.json: the packages that passed. left.json: the packages left for a human, with the reason.
+          jq --slurpfile r "$RUNNER_TEMP/reasons.jsonl" \
+            'map(. as $v | . + {reason: ($r[] | select(.ecosystem == $v.ecosystem and .package == $v.package) | .reason)})' \
+            "$RUNNER_TEMP/actionable.json" > "$RUNNER_TEMP/results.json"
+          jq 'map(select(.reason == ""))' "$RUNNER_TEMP/results.json" > "$RUNNER_TEMP/fixed.json"
+          jq 'map(select(.reason != ""))' "$RUNNER_TEMP/results.json" > "$RUNNER_TEMP/left.json"
+
+          # First pass for the packages left for a human: the bump without the checks, on top of the passing ones
+          while IFS=$'\t' read -r -u 3 eco pkg fixed; do
+            bump "$eco" "$pkg" "$fixed" || true
+          done 3< <(jq -r '.[] | [.ecosystem, .package, .fixed] | @tsv' "$RUNNER_TEMP/left.json")
+          git diff --quiet || git commit -qam "fix(deps): first-pass bumps that need a human"
+          draft=$(git rev-parse HEAD)
+
+          # Only the dependency files at the repository root may change
+          if other=$(git diff --name-only "$base" "$draft" | grep -vxE 'go\.mod|go\.sum|package\.json|package-lock\.json'); then
+            echo "::error::The bumps changed files that are not dependency files: ${other//$'\n'/ }"
+            exit 1
+          fi
+
+          {
+            echo "base=$base"
+            [[ "$clean" == "$base" ]] || echo "clean=$clean"
+            [[ "$draft" == "$clean" ]] || echo "draft=$draft"
+          } >> "$GITHUB_OUTPUT"
+
+      # ---- Step C: pull requests --------------------------------------------------------------------------------
+
+      # Created only now, after the bumps and the checks have finished
+      - name: Create the GitHub App token
+        id: app-token
+        if: steps.gate.outputs.count != '0'
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ secrets.AUTOFIX_APP_CLIENT_ID }}
+          private-key: ${{ secrets.AUTOFIX_APP_PEM }}
+
+      # The packages that passed go to one pull request with auto-merge. The packages left for a human go to a
+      # separate draft pull request, which holds the passing bumps and the first-pass bumps.
+      - name: Open or update the pull requests
+        id: pr
+        if: steps.gate.outputs.count != '0'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          REPO: ${{ github.repository }}
+          BASE_BRANCH: ${{ github.ref_name }}
+          BASE: ${{ steps.fix.outputs.base }}
+          CLEAN: ${{ steps.fix.outputs.clean }}
+          DRAFT: ${{ steps.fix.outputs.draft }}
+          AUTO_MERGE: ${{ inputs.auto-merge }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          # Dependency versions as "name version" lines
+          deps() {
+            case "$1" in
+              go.mod)
+                awk '/^require[[:space:]]*\(/ {b=1; next}
+                     b && /^\)/ {b=0; next}
+                     b && $1 !~ /^\/\// {print $1, $2; next}
+                     /^require[[:space:]]+[^(]/ {print $2, $3}' ;;
+              package-lock.json)
+                jq -r '(.packages // {}) | to_entries[] | select(.key != "" and .value.version != null) | "\(.key) \(.value.version)"' ;;
+            esac
+          }
+          # Version changes between two "name version" lists as "name old new", where '-' is absent
+          compare() {
+            awk 'FILENAME == ARGV[1] {o[$1] = $2; next}
+                 {n[$1] = $2}
+                 END {for (k in n) { if (!(k in o)) print k, "-", n[k]; else if (o[k] != n[k]) print k, o[k], n[k] }
+                      for (k in o) if (!(k in n)) print k, o[k], "-"}' "$1" "$2" | sort
+          }
+
+          # sections FROM TO VULNS: prints the pull request sections for the vulnerabilities in the file VULNS:
+          # their old and new versions between the two commits, then every other difference
+          sections() {
+            local from=$1 to=$2 vulns=$3 file d old new directives='{}'
+            : > "$RUNNER_TEMP/changes.txt"
+            for file in go.mod package-lock.json; do
+              git cat-file -e "$to:$file" 2> /dev/null || continue
+              compare <(git show "$from:$file" 2> /dev/null | deps "$file") <(git show "$to:$file" | deps "$file") >> "$RUNNER_TEMP/changes.txt"
+            done
+            # Go directive and toolchain changes (a standard library fix raises the go directive)
+            for d in go toolchain; do
+              old=$(git show "$from:go.mod" 2> /dev/null | awk -v d="$d" '$1 == d {print $2}')
+              new=$(git show "$to:go.mod" 2> /dev/null | awk -v d="$d" '$1 == d {print $2}')
+              if [[ "$old" != "$new" ]]; then
+                directives=$(jq -c --arg d "$d" --arg o "${old:--}" --arg n "${new:--}" '. + {($d): {old: $o, new: $n}}' <<< "$directives")
+              fi
+            done
+            jq -Rn --argjson directives "$directives" \
+              '{directives: $directives, bumps: [inputs | split(" ") | {name: .[0], old: .[1], new: .[2]}]}' \
+              < "$RUNNER_TEMP/changes.txt" > "$RUNNER_TEMP/changes.json"
+
+            echo "Highest severity: **$(jq -r '.[0].severity // "unknown"' "$vulns")**"
+            echo
+            echo "### Vulnerabilities"
+            jq -r --slurpfile ch "$RUNNER_TEMP/changes.json" '
+              .[] | . as $v
+              | (if $v.package == "stdlib" then "go \($ch[0].directives.go.old // "?") -> \($ch[0].directives.go.new // "?")"
+                 else ([$ch[0].bumps[] | select(.name == $v.package or (.name | endswith("node_modules/" + $v.package))) | "\(.old) -> \(.new)"]
+                       | unique | join(", ")) end) as $change
+              | "- [\($v.severity | ascii_upcase)] \($v.ids | join(", ")) `\($v.package)`: \(if $change == "" then "needs " + $v.fixed else $change end)"
+            ' "$vulns"
+            echo
+            echo "### Side effects"
+            jq -r --slurpfile vulns "$vulns" --argjson files "$(git diff --name-only "$from" "$to" | jq -R . | jq -sc .)" '
+              ([.bumps[] | select(. as $b | $vulns[0] | any(. as $v | $v.package == $b.name or ($b.name | endswith("node_modules/" + $v.package))) | not)]) as $other
+              | [ (.directives | to_entries[] | "- `\(.key)` directive changed: \(.value.old) -> \(.value.new)"),
+                  (if ($other | length) > 0 then "- \($other | length) other dependency version(s) changed (indirect or transitive):" else empty end),
+                  ($other[:15][] | "  - `\(.name)`: \(.old) -> \(.new)"),
+                  (if ($other | length) > 15 then "  - ... and \($other | length - 15) more" else empty end),
+                  "- Files changed: \($files | map("`" + . + "`") | join(", "))" ]
+              | .[]
+            ' "$RUNNER_TEMP/changes.json"
+          }
+
+          auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
+          echo "::add-mask::$auth"
+          open_pr() { gh pr list --repo "$REPO" --head "$1" --state open --json url --jq '.[0].url // empty'; }
+          # publish COMMIT BRANCH TITLE [gh pr create options]: pushes the commit to the branch, then opens a pull
+          # request from body.md or updates the open one. Sets $pr_url, and $opened to true for a new pull request.
+          publish() {
+            local commit=$1 branch=$2 title=$3
+            shift 3
+            # The branch is replaced, unless it already holds exactly these files (then its checks do not run again)
+            if [[ "$(gh api "repos/${REPO}/commits/${branch}" --jq .commit.tree.sha 2> /dev/null || true)" != "$(git rev-parse "$commit^{tree}")" ]]; then
+              git -c "http.extraheader=AUTHORIZATION: basic $auth" push -q --force "${GITHUB_SERVER_URL}/${REPO}.git" "$commit:refs/heads/$branch"
+            fi
+            pr_url=$(open_pr "$branch")
+            opened=false
+            if [[ -n "$pr_url" ]]; then
+              gh pr edit "$pr_url" --title "$title" --body-file "$RUNNER_TEMP/body.md"
+            else
+              pr_url=$(gh pr create --repo "$REPO" --base "$BASE_BRANCH" --head "$branch" --title "$title" \
+                --body-file "$RUNNER_TEMP/body.md" "$@" | tail -n1)
+              opened=true
+            fi
+          }
+          # Slack text is collected here and posted by the next step
+          say() { printf '%s\n\n' "$1" >> "$RUNNER_TEMP/slack.txt"; }
+
+          for l in dependencies security needs-human; do
+            gh label create "$l" --repo "$REPO" > /dev/null 2>&1 || true
+          done
+          deployment="Merging this does not deploy it. The fix reaches production with the next deployment."
+
+          if [[ -n "$CLEAN" ]]; then
+            title=$(jq -r 'if length <= 3 then "fix(deps): fix security vulnerabilities (\(map(.ids[0]) | join(", ")))"
+                           else "fix(deps): fix \(length) security vulnerabilities" end' "$RUNNER_TEMP/fixed.json")
+            {
+              echo "## Security fix (automated)"
+              echo
+              echo "Each package below was bumped to its minimum published fixed version, and a check confirmed that the fixed version is reached. This pull request's own checks build and test the change."
+              echo
+              sections "$BASE" "$CLEAN" "$RUNNER_TEMP/fixed.json"
+              echo
+              echo "### Deployment"
+              echo "$deployment"
+              echo
+              echo "Workflow run: $RUN_URL"
+            } > "$RUNNER_TEMP/body.md"
+            publish "$CLEAN" "$BRANCH" "$title" --label dependencies,security
+            err=''
+            # Slack hears about this pull request when it merges (the last job), or now when it cannot merge itself
+            if [[ "$AUTO_MERGE" == "true" ]] && err=$(gh pr merge "$pr_url" --auto --squash 2>&1); then
+              echo "Auto-merge is enabled on $pr_url: it merges once the required checks pass."
+            elif [[ "$opened" == "true" ]]; then
+              say ":lock: *Security fix pull request needs a human to merge it* in *${REPO}*: ${pr_url}"$'\n'"Auto-merge is off or could not be enabled${err:+ ($(head -n1 <<< "$err"))}."
+            fi
+          fi
+
+          # The packages left for a human are reported when the draft pull request is opened. An open draft is
+          # left as it is, because a human may have pushed work to it. Without a draft the report repeats.
+          if [[ "$(jq length "$RUNNER_TEMP/left.json")" != "0" ]]; then
+            problems=$(jq -r '.[] | "- `\(.package)` needs \(.fixed): \(.reason)"' "$RUNNER_TEMP/left.json")
+            if [[ -n "$(open_pr "$BRANCH-needs-human")" ]]; then
+              echo "An open draft pull request already holds a first-pass fix, so nothing is pushed or reported."
+            else
+              where="No pull request holds a first pass, because the bumps of these packages changed nothing."
+              if [[ -n "$DRAFT" ]]; then
+                {
+                  echo "## First-pass security fix: needs a human"
+                  echo
+                  echo "This is a draft and auto-merge is NOT enabled. The packages below were bumped as a first pass, but they did not pass the checks. Finish the work, then mark it ready for review and merge it."
+                  echo
+                  echo "### What needs a human"
+                  echo "$problems"
+                  echo
+                  sections "${CLEAN:-$BASE}" "$DRAFT" "$RUNNER_TEMP/left.json"
+                  echo
+                  echo "### Deployment"
+                  echo "$deployment"
+                  echo
+                  echo "Workflow run: $RUN_URL"
+                } > "$RUNNER_TEMP/body.md"
+                publish "$DRAFT" "$BRANCH-needs-human" "fix(deps): first-pass security fix that needs a human" --draft --label dependencies,security,needs-human
+                where="Draft pull request with the first pass: ${pr_url}"
+              fi
+              case "$(jq -r '.[0].severity' "$RUNNER_TEMP/left.json")" in
+                critical) header=":rotating_light: *CRITICAL vulnerability has a published fix that needs a human* in *${REPO}*" ;;
+                high) header=":rotating_light: *HIGH severity vulnerability has a published fix that needs a human* in *${REPO}*" ;;
+                *) header=":construction: *A published security fix needs a human* in *${REPO}*" ;;
+              esac
+              say "${header}"$'\n'"${problems}"$'\n'"${where}"
+            fi
+          fi
+
+      # ---- Step D: Slack ----------------------------------------------------------------------------------------
+
+      - name: Notify Slack
+        if: always()
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          CHANNEL: ${{ inputs.slack-channel-id || secrets.SLACK_CHANNEL_ID }}
+          JOB_STATUS: ${{ job.status }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [[ "$JOB_STATUS" == "failure" ]]; then
+            text=":x: *Vulnerability autofix failed* in *${REPO}* before it could finish, so fixable vulnerabilities may be open. Check the run: ${RUN_URL}"
+          elif [[ -s "$RUNNER_TEMP/slack.txt" ]]; then
+            text="$(cat "$RUNNER_TEMP/slack.txt")"$'\n'"Run: ${RUN_URL}"
+          else
+            echo "Nothing to report."
+            exit 0
+          fi
+
+          payload=$(jq -n --arg channel "$CHANNEL" --arg text "$text" '{channel: $channel, text: $text, unfurl_links: false}')
+          response=$(curl -sS -X POST https://slack.com/api/chat.postMessage \
+            -H "Authorization: Bearer $SLACK_BOT_TOKEN" -H "Content-type: application/json; charset=utf-8" --data "$payload")
+          if [[ "$(jq -r '.ok' <<< "$response")" != "true" ]]; then
+            echo "::error::Slack post failed: $(jq -r '.error // "unknown error"' <<< "$response")"
+            exit 1
+          fi
+
+  # Runs when the calling workflow is triggered by a closed pull request. When that pull request is a merged fix
+  # from this workflow (or the draft that a human finished), Slack is told that the fix is merged.
+  merged:
+    name: Report a merged fix
+    if: >-
+      github.event_name == 'pull_request' && github.event.pull_request.merged
+      && startsWith(github.event.pull_request.head.ref, 'vuln-autofix')
+      && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ${{ inputs.runs-on }}
+    permissions: {}
+    steps:
+      - name: Notify Slack
+        id: merged
+        shell: bash
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          CHANNEL: ${{ inputs.slack-channel-id || secrets.SLACK_CHANNEL_ID }}
+          REPO: ${{ github.repository }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          # The severity and the list of vulnerabilities are read from the body this workflow wrote
+          PR_BODY=${PR_BODY//$'\r'/}
+          case "$(sed -n 's/^Highest severity: \*\*\(.*\)\*\*$/\1/p' <<< "$PR_BODY" | head -n1)" in
+            critical) header=":rotating_light: *CRITICAL vulnerability fix merged* in *${REPO}*" ;;
+            high) header=":rotating_light: *HIGH severity vulnerability fix merged* in *${REPO}*" ;;
+            *) header=":white_check_mark: *Security fix merged* in *${REPO}*" ;;
+          esac
+          vulns=$(awk '/^### Vulnerabilities/ {on = 1; next} /^###/ {on = 0} on && NF' <<< "$PR_BODY")
+          text="${header}"$'\n'"${vulns}"$'\n'"*Pull request:* ${PR_URL}"$'\n'"*Not in production yet:* it needs a deployment."
+
+          payload=$(jq -n --arg channel "$CHANNEL" --arg text "$text" '{channel: $channel, text: $text, unfurl_links: false}')
+          response=$(curl -sS -X POST https://slack.com/api/chat.postMessage \
+            -H "Authorization: Bearer $SLACK_BOT_TOKEN" -H "Content-type: application/json; charset=utf-8" --data "$payload")
+          if [[ "$(jq -r '.ok' <<< "$response")" != "true" ]]; then
+            echo "::error::Slack post failed: $(jq -r '.error // "unknown error"' <<< "$response")"
+            exit 1
+          fi
