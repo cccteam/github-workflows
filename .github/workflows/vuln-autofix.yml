@@ -2,9 +2,11 @@
 #  1. A deterministic gate (no LLM) collects open Dependabot alerts and govulncheck findings and keeps
 #     only those with a published fixed version. Nothing actionable: the run ends silently.
 #  2. Claude bumps only those packages to the minimum fixed version, on a branch, with a tight tool allow-list.
-#  3. Deterministic guards check the result: only dependency files changed, no major version jump, and the
-#     fixed versions are reached. A failed guard discards the change and pings a human in Slack.
-#  4. A pull request is opened and auto-merge is enabled. Slack is posted only after action was taken.
+#  3. Deterministic guards check the result: only dependency files changed, no major version jump, the fixed
+#     versions are reached and the code still builds.
+#  4. All guards pass: a pull request is opened and auto-merge is enabled. A guard fails: the first-pass fix is
+#     kept as a DRAFT pull request labelled needs-human, auto-merge stays off, and the problems are listed.
+#     Slack is posted only after action was taken.
 # Vulnerabilities with no published fix are never touched.
 #
 # See docs/vuln-autofix.md for the setup prerequisites (tokens, branch protection) and a caller example.
@@ -30,6 +32,11 @@ on:
         type: string
         default: 'dependencies,security'
         description: Comma-separated labels for the pull request (created if missing)
+      needs-human-label:
+        required: false
+        type: string
+        default: 'needs-human'
+        description: Label for the draft pull request opened when a guard failed and more work is needed (created if missing)
       extra-allowed-files-regex:
         required: false
         type: string
@@ -284,23 +291,33 @@ jobs:
           CLAUDE_OUTCOME: ${{ steps.claude.outcome }}
           EXTRA_ALLOWED: ${{ inputs.extra-allowed-files-regex }}
         run: |
+          # A failed guard is recorded, not fatal: the first-pass fix is kept and reviewed by a human
           problem() {
-            echo "$1" >> "$RUNNER_TEMP/problem.txt"
-            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "$1" >> "$RUNNER_TEMP/problems.txt"
             echo "::warning::$1"
-            exit 0
           }
 
           if [[ "$CLAUDE_OUTCOME" != "success" ]]; then
-            problem "The Claude step did not finish successfully (outcome: $CLAUDE_OUTCOME)."
+            problem "The Claude step did not finish successfully (outcome: $CLAUDE_OUTCOME), so the first-pass fix may be incomplete."
           fi
 
           # Fold in anything Claude committed or left untracked, then compare against the starting commit
           git reset --soft "$BASE_SHA"
           git add -A
+
+          # Workflow files are never pushed from here: a branch with changed workflows could run them with secrets
+          if [[ -n "$(git diff --cached --name-only -- .github)" ]]; then
+            git reset -q "$BASE_SHA" -- .github
+            git checkout -q -- .github 2>/dev/null || true
+            git clean -fdq -- .github
+            problem "The change touched files under .github, which were reverted and not included."
+          fi
+
           mapfile -d '' -t files < <(git diff --cached --name-only -z)
           if [[ ${#files[@]} -eq 0 ]]; then
-            problem "Claude finished without changing any file."
+            problem "The version bump produced no change, although a fix is published."
+            echo "has-diff=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
 
           allowed='^(.*/)?(go\.mod|go\.sum|go\.work|go\.work\.sum|package\.json|package-lock\.json)$'
@@ -311,18 +328,18 @@ jobs:
             fi
           done
           if [[ ${#disallowed[@]} -gt 0 ]]; then
-            problem "The change touched files outside the allowed dependency files, so it was discarded: ${disallowed[*]}"
+            problem "The change touched files outside the allowed dependency files (review them): ${disallowed[*]}"
           fi
 
           # Dependency files may only change their dependency data
           gomod_diff=$(git diff --cached -U0 -- go.mod)
           if grep -Eq '^\+[[:space:]]*(replace|exclude|retract)\b' <<< "$gomod_diff"; then
-            problem "The change added a replace, exclude or retract directive to go.mod, so it was discarded."
+            problem "The change added a replace, exclude or retract directive to go.mod (review it)."
           fi
           if [[ -f package.json ]]; then
             strip='del(.dependencies, .devDependencies, .optionalDependencies, .peerDependencies, .overrides)'
             if [[ "$(git show "$BASE_SHA:package.json" | jq -S "$strip")" != "$(jq -S "$strip" package.json)" ]]; then
-              problem "The change modified package.json beyond its dependency sections, so it was discarded."
+              problem "The change modified package.json beyond its dependency sections (review it)."
             fi
           fi
 
@@ -360,7 +377,7 @@ jobs:
             fi
           done < "$RUNNER_TEMP/changes.txt"
           if [[ ${#majors[@]} -gt 0 ]]; then
-            problem "The fix needs a major version change, which is not applied automatically: ${majors[*]}"
+            problem "The fix needs a major version change, which needs a human to apply and test: ${majors[*]}"
           fi
 
           # Go directive and toolchain changes (a standard library fix bumps the go directive)
@@ -398,19 +415,17 @@ jobs:
             | .[]
           ' "$RUNNER_TEMP/changes.json" > "$RUNNER_TEMP/side-effects.md"
 
-          echo "ok=true" >> "$GITHUB_OUTPUT"
+          echo "has-diff=true" >> "$GITHUB_OUTPUT"
 
       - name: Verify the fixed versions are reached
         id: verify
-        if: steps.guard.outputs.ok == 'true'
+        if: steps.guard.outputs.has-diff == 'true'
         env:
           GOVULNCHECK_VERSION: ${{ inputs.govulncheck-version }}
         run: |
           problem() {
-            echo "$1" >> "$RUNNER_TEMP/problem.txt"
-            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "$1" >> "$RUNNER_TEMP/problems.txt"
             echo "::warning::$1"
-            exit 0
           }
           # ver_ge A B: version A is at least version B
           ver_ge() { [[ "$(printf '%s\n%s\n' "${2#v}" "${1#v}" | sort -V | head -n1)" == "${2#v}" ]]; }
@@ -442,22 +457,35 @@ jobs:
             problem "After the change the fixed versions are not reached: ${unmet[*]}"
           fi
 
+          # The code must still build (tests run in the pull request's own CI)
+          build_ok=true
+          if [[ -f go.mod ]] && ! go build ./... > "$RUNNER_TEMP/build.log" 2>&1; then
+            build_ok=false
+            problem "go build fails after the change: $(tail -n 3 "$RUNNER_TEMP/build.log" | tr '\n' ' ')"
+          fi
+          if [[ -f package-lock.json ]] && ! { npm ci && npm run build --if-present; } > "$RUNNER_TEMP/npm-build.log" 2>&1; then
+            build_ok=false
+            problem "the npm install or build fails after the change: $(tail -n 3 "$RUNNER_TEMP/npm-build.log" | tr '\n' ' ')"
+          fi
+
           # Dependabot alerts only clear after the merge, so govulncheck is what can be re-run here
-          if [[ -f go.mod ]]; then
-            govulncheck -format json ./... > "$RUNNER_TEMP/govulncheck-after.json"
-            remaining=$(jq -n --slurpfile alerts <(echo '[]') --slurpfile govulncheck "$RUNNER_TEMP/govulncheck-after.json" \
-              --argjson ecosystems '["go"]' -f "$RUNNER_TEMP/gate.jq" | jq -r 'map(.ids[0] + " (" + .package + ")") | join(", ")')
-            if [[ -n "$remaining" ]]; then
-              problem "govulncheck still reports fixable vulnerabilities after the change: $remaining"
+          if [[ -f go.mod && "$build_ok" == "true" ]]; then
+            if govulncheck -format json ./... > "$RUNNER_TEMP/govulncheck-after.json"; then
+              remaining=$(jq -n --slurpfile alerts <(echo '[]') --slurpfile govulncheck "$RUNNER_TEMP/govulncheck-after.json" \
+                --argjson ecosystems '["go"]' -f "$RUNNER_TEMP/gate.jq" | jq -r 'map(.ids[0] + " (" + .package + ")") | join(", ")')
+              if [[ -n "$remaining" ]]; then
+                problem "govulncheck still reports fixable vulnerabilities after the change: $remaining"
+              fi
+            else
+              problem "govulncheck could not run after the change."
             fi
           fi
-          echo "ok=true" >> "$GITHUB_OUTPUT"
 
       # ---- Step D: pull request and auto-merge ----------------------------------------------------------------
 
       - name: Open pull request
         id: pr
-        if: steps.verify.outputs.ok == 'true'
+        if: steps.guard.outputs.has-diff == 'true'
         env:
           GH_TOKEN: ${{ secrets.AUTOFIX_TOKEN || github.token }}
           REPO: ${{ github.repository }}
@@ -466,10 +494,15 @@ jobs:
           KEY: ${{ steps.gate.outputs.key }}
           TOP_SEVERITY: ${{ steps.gate.outputs.top-severity }}
           LABELS: ${{ inputs.pr-labels }}
+          NEEDS_HUMAN_LABEL: ${{ inputs.needs-human-label }}
           AUTO_MERGE: ${{ inputs.auto-merge }}
           CLAUDE_EXEC: ${{ steps.claude.outputs.execution_file }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
+          # Any recorded problem means a human has to finish the job: draft pull request, no auto-merge
+          needs_human=false
+          [[ -s "$RUNNER_TEMP/problems.txt" ]] && needs_human=true
+
           count=$(jq length "$RUNNER_TEMP/actionable.json")
           if [[ "$count" -le 3 ]]; then
             title="fix(deps): fix security vulnerabilities ($(jq -r 'map(.ids[0]) | join(", ")' "$RUNNER_TEMP/actionable.json"))"
@@ -486,15 +519,28 @@ jobs:
 
           {
             echo "<!-- vuln-autofix-key: $KEY -->"
-            echo "## Security fix (automated)"
+            if [[ "$needs_human" == "true" ]]; then
+              echo "## First-pass security fix: needs a human"
+              echo
+              echo "This is a draft. A guard failed, so auto-merge is NOT enabled. Resolve the problems below, then mark it ready for review and merge it."
+              echo
+              echo "### Guards that failed, and what remains"
+              sed 's/^/- /' "$RUNNER_TEMP/problems.txt"
+            else
+              echo "## Security fix (automated)"
+            fi
             echo
             echo "Highest severity: **$TOP_SEVERITY**"
             echo
-            echo "### Vulnerabilities fixed"
+            echo "### Vulnerabilities targeted"
             cat "$RUNNER_TEMP/summary.md"
             echo
             echo "### How it was addressed"
-            echo "Only the packages above were bumped, each to the minimum published fixed version, and the build and tests were run. Deterministic guards confirmed that only dependency files changed, that no major version changed, and that the fixed versions are reached."
+            if [[ "$needs_human" == "true" ]]; then
+              echo "The packages above were bumped to the minimum published fixed version as a first pass. See the failed guards above for what is incomplete."
+            else
+              echo "Only the packages above were bumped, each to the minimum published fixed version. Deterministic guards confirmed that only dependency files changed, that no major version changed, that the fixed versions are reached and that the code builds. Tests run in this pull request's CI."
+            fi
             echo
             echo "### Side effects"
             cat "$RUNNER_TEMP/side-effects.md"
@@ -513,15 +559,27 @@ jobs:
             echo "Workflow run: $RUN_URL"
           } > "$RUNNER_TEMP/pr-body.md"
 
-          IFS=',' read -ra labels <<< "$LABELS"
+          all_labels="$LABELS"
+          draft=()
+          if [[ "$needs_human" == "true" ]]; then
+            all_labels="${all_labels:+$all_labels,}$NEEDS_HUMAN_LABEL"
+            draft=(--draft)
+          fi
+          IFS=',' read -ra labels <<< "$all_labels"
           for l in "${labels[@]}"; do
             gh label create "$l" --repo "$REPO" > /dev/null 2>&1 || true
           done
           pr_url=$(gh pr create --repo "$REPO" --base "$BASE_BRANCH" --head "$BRANCH" --title "$title" \
-            --body-file "$RUNNER_TEMP/pr-body.md" --label "$LABELS" | tail -n1)
-          echo "pr-url=$pr_url" >> "$GITHUB_OUTPUT"
+            --body-file "$RUNNER_TEMP/pr-body.md" --label "$all_labels" "${draft[@]}" | tail -n1)
+          {
+            echo "pr-url=$pr_url"
+            echo "needs-human=$needs_human"
+          } >> "$GITHUB_OUTPUT"
 
-          if [[ "$AUTO_MERGE" == "true" ]]; then
+          # Nothing that failed a guard is ever auto-merged
+          if [[ "$needs_human" == "true" ]]; then
+            status="auto-merge is NOT enabled: this is a draft first-pass fix that needs a human"
+          elif [[ "$AUTO_MERGE" == "true" ]]; then
             if err=$(gh pr merge "$pr_url" --auto --squash 2>&1); then
               status="auto-merge enabled: it merges once the required checks pass"
             else
@@ -533,7 +591,7 @@ jobs:
           echo "$status" > "$RUNNER_TEMP/merge-status.txt"
 
       - name: Close superseded Dependabot pull requests
-        if: inputs.close-superseded-dependabot-prs && steps.pr.outputs.pr-url != ''
+        if: inputs.close-superseded-dependabot-prs && steps.pr.outputs.pr-url != '' && steps.pr.outputs.needs-human == 'false'
         env:
           GH_TOKEN: ${{ secrets.AUTOFIX_TOKEN || github.token }}
           REPO: ${{ github.repository }}
@@ -555,21 +613,29 @@ jobs:
           THREAD_TS: ${{ inputs.slack-thread-ts }}
           JOB_STATUS: ${{ job.status }}
           PR_URL: ${{ steps.pr.outputs.pr-url }}
+          NEEDS_HUMAN: ${{ steps.pr.outputs.needs-human }}
           TOP_SEVERITY: ${{ steps.gate.outputs.top-severity }}
           REPO: ${{ github.repository }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           read_file() { [[ -f "$RUNNER_TEMP/$1" ]] && cat "$RUNNER_TEMP/$1" || true; }
 
-          if [[ -n "$PR_URL" ]]; then
+          if [[ -n "$PR_URL" && "$NEEDS_HUMAN" == "true" ]]; then
+            case "$TOP_SEVERITY" in
+              critical) header=":rotating_light: *CRITICAL vulnerability: first-pass fix opened, more work needed* in *${REPO}*" ;;
+              high) header=":rotating_light: *HIGH severity vulnerability: first-pass fix opened, more work needed* in *${REPO}*" ;;
+              *) header=":construction: *Security first-pass fix opened, more work needed* in *${REPO}*" ;;
+            esac
+            text="${header}"$'\n\n'"*What still needs a human*"$'\n'"$(sed 's/^/- /' "$RUNNER_TEMP/problems.txt")"$'\n\n'"*Vulnerabilities*"$'\n'"$(read_file summary.md)"$'\n\n'"*Draft pull request:* ${PR_URL}"$'\n'"*Merge status:* $(read_file merge-status.txt)"$'\n'"*Needs deployment to reach production* once a human finishes and merges it."$'\n\n'"*Side effects*"$'\n'"$(read_file side-effects.md)"$'\n\n'"Run: ${RUN_URL}"
+          elif [[ -n "$PR_URL" ]]; then
             case "$TOP_SEVERITY" in
               critical) header=":rotating_light: *CRITICAL vulnerability fixed* in *${REPO}*" ;;
               high) header=":rotating_light: *HIGH severity vulnerability fixed* in *${REPO}*" ;;
               *) header=":lock: Security fix opened for *${REPO}*" ;;
             esac
             text="${header}"$'\n\n'"*Vulnerabilities*"$'\n'"$(read_file summary.md)"$'\n\n'"*Pull request:* ${PR_URL}"$'\n'"*Merge status:* $(read_file merge-status.txt)"$'\n'"*Needs deployment to reach production.* Merging does not deploy it."$'\n\n'"*Side effects*"$'\n'"$(read_file side-effects.md)"$'\n\n'"Run: ${RUN_URL}"
-          elif [[ -s "$RUNNER_TEMP/problem.txt" ]]; then
-            text=":sos: *Vulnerability autofix needs a human* in *${REPO}*. No pull request was opened."$'\n\n'"*Reason:* $(read_file problem.txt)"$'\n\n'"*Fixable vulnerabilities still open*"$'\n'"$(read_file targets.md)"$'\n\n'"Run: ${RUN_URL}"
+          elif [[ -s "$RUNNER_TEMP/problems.txt" ]]; then
+            text=":sos: *Vulnerability autofix needs a human* in *${REPO}*. A fix is published but no pull request was opened."$'\n\n'"*Reason:*"$'\n'"$(sed 's/^/- /' "$RUNNER_TEMP/problems.txt")"$'\n\n'"*Fixable vulnerabilities still open*"$'\n'"$(read_file targets.md)"$'\n\n'"Run: ${RUN_URL}"
           elif [[ "$JOB_STATUS" == "failure" ]]; then
             text=":x: *Vulnerability autofix failed* in *${REPO}* before it could finish, so fixable vulnerabilities may be open. Check the run: ${RUN_URL}"
           else

