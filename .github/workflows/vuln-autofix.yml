@@ -67,7 +67,7 @@ on:
         description: Token that can read Dependabot alerts (GITHUB_TOKEN cannot). The same secret golang-security-scan uses.
       AUTOFIX_APP_CLIENT_ID:
         required: true
-        description: Client ID of the GitHub App that pushes the branch, opens the pull request and opens issues. A pull request opened with GITHUB_TOKEN does not trigger workflows, so its checks would never run. The app needs Contents, Pull requests and Issues write access on the repository.
+        description: Client ID of the GitHub App that pushes the branch and opens the pull request. A pull request opened with GITHUB_TOKEN does not trigger workflows, so its checks would never run. The app needs Contents and Pull requests write access on the repository.
       AUTOFIX_APP_PEM:
         required: true
         description: Private key of that GitHub App
@@ -103,7 +103,6 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
-      issues: read
     defaults:
       run:
         shell: bash
@@ -237,7 +236,7 @@ jobs:
           echo "Actionable vulnerabilities: $count"
           cat "$RUNNER_TEMP/targets.md"
 
-      - name: Skip if an open pull request or issue already covers these
+      - name: Skip if an open pull request already covers these
         id: dedupe
         if: steps.gate.outputs.count != '0'
         env:
@@ -248,16 +247,8 @@ jobs:
           existing=$(gh pr list --repo "$REPO" --state open --limit 100 --json url,headRefName,body \
             | jq -r --arg prefix "$BRANCH_PREFIX" --arg marker "vuln-autofix-key: $KEY" \
                 'map(select((.headRefName | startswith($prefix)) and (.body | contains($marker)))) | .[0].url // empty')
-          # A run that could not open a pull request records that in an issue. While it is open the same set of
-          # vulnerabilities is not tried or reported again; closing it lets the next run try again.
-          # An open fix pull request is checked later for failed checks
-          echo "existing-pr=$existing" >> "$GITHUB_OUTPUT"
-          if [[ -z "$existing" ]]; then
-            existing=$(gh issue list --repo "$REPO" --state open --limit 100 --json url,body \
-              | jq -r --arg marker "vuln-autofix-key: $KEY" 'map(select(.body | contains($marker))) | .[0].url // empty')
-          fi
           if [[ -n "$existing" ]]; then
-            echo "An open pull request or issue already covers these vulnerabilities: $existing"
+            echo "An open pull request already covers these vulnerabilities: $existing"
             echo "proceed=false" >> "$GITHUB_OUTPUT"
           else
             echo "proceed=true" >> "$GITHUB_OUTPUT"
@@ -557,42 +548,11 @@ jobs:
       # Created only now: the Claude step and the build above have finished, so neither could read this token
       - name: Create the GitHub App token
         id: app-token
-        if: always()
+        if: steps.guard.outputs.has-diff == 'true'
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
           client-id: ${{ secrets.AUTOFIX_APP_CLIENT_ID }}
           private-key: ${{ secrets.AUTOFIX_APP_PEM }}
-
-      # An open fix pull request makes later runs end early. If its checks failed it never merges, and nothing
-      # else would say so. This reports it once.
-      - name: Flag an open fix pull request whose checks failed
-        id: failed-pr
-        if: steps.dedupe.outputs.existing-pr != ''
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          PR: ${{ steps.dedupe.outputs.existing-pr }}
-          NEEDS_HUMAN_LABEL: ${{ inputs.needs-human-label }}
-          REPO: ${{ github.repository }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          marker='<!-- vuln-autofix-checks-failed -->'
-          pr=$(gh pr view "$PR" --json isDraft,comments,statusCheckRollup)
-          failed=$(jq -r '[.statusCheckRollup[]?
-                           | select((.conclusion // .state // "") | IN("FAILURE", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED", "STARTUP_FAILURE", "ERROR"))
-                           | (.name // .context // "unnamed check")] | unique | join(", ")' <<< "$pr")
-          if [[ -z "$failed" ]]; then
-            echo "No failed checks on $PR."
-          elif [[ "$(jq -r '.isDraft' <<< "$pr")" == "true" ]]; then
-            echo "$PR is a draft, which was already reported as needing a human."
-          elif jq -e --arg m "$marker" 'any(.comments[]?; .body | contains($m))' <<< "$pr" > /dev/null; then
-            echo "The failed checks on $PR were already reported."
-          else
-            gh label create "$NEEDS_HUMAN_LABEL" --repo "$REPO" > /dev/null 2>&1 || true
-            gh pr edit "$PR" --add-label "$NEEDS_HUMAN_LABEL"
-            gh pr comment "$PR" --body "$marker"$'\n'"Checks failed, so this pull request will not merge by itself and needs a human: $failed"$'\n\n'"Found by $RUN_URL. This is reported once."
-            echo "$failed" > "$RUNNER_TEMP/failed-checks.txt"
-            echo "pr-url=$PR" >> "$GITHUB_OUTPUT"
-          fi
 
       - name: Open pull request
         id: pr
@@ -701,65 +661,7 @@ jobs:
           fi
           echo "$status" > "$RUNNER_TEMP/merge-status.txt"
 
-      # ---- Step E: issue when no pull request could be opened, then Slack --------------------------------------
-
-      - name: Record a run that needs a human in an issue
-        id: issue
-        if: always() && steps.app-token.outputs.token != ''
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          REPO: ${{ github.repository }}
-          KEY: ${{ steps.gate.outputs.key }}
-          PR_URL: ${{ steps.pr.outputs.pr-url }}
-          JOB_STATUS: ${{ job.status }}
-          NEEDS_HUMAN_LABEL: ${{ inputs.needs-human-label }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          # The issue that records a failed run carries this marker. At most one is open at a time.
-          failure_marker='<!-- vuln-autofix-failure -->'
-          open_failure=$(gh issue list --repo "$REPO" --state open --limit 100 --json number,body \
-            | jq -r --arg m "$failure_marker" 'map(select(.body | contains($m))) | .[0].number // empty')
-          new_issue() { # title: opens an issue from issue-body.md and records its URL
-            gh label create "$NEEDS_HUMAN_LABEL" --repo "$REPO" > /dev/null 2>&1 || true
-            issue_url=$(gh issue create --repo "$REPO" --title "$1" \
-              --body-file "$RUNNER_TEMP/issue-body.md" --label "$NEEDS_HUMAN_LABEL" | tail -n1)
-            echo "issue-url=$issue_url" >> "$GITHUB_OUTPUT"
-          }
-
-          if [[ -z "$PR_URL" && -s "$RUNNER_TEMP/problems.txt" ]]; then
-            {
-              echo "<!-- vuln-autofix-key: $KEY -->"
-              echo "The vulnerability autofix workflow found vulnerabilities with a published fix, but could not open a pull request for them."
-              echo
-              echo "### Reason"
-              sed 's/^/- /' "$RUNNER_TEMP/problems.txt"
-              echo
-              echo "### Fixable vulnerabilities still open"
-              cat "$RUNNER_TEMP/targets.md"
-              echo
-              echo "While this issue is open the workflow does not try or report this same set of vulnerabilities again. Close it to let the next run try again."
-              echo
-              echo "Workflow run: $RUN_URL"
-            } > "$RUNNER_TEMP/issue-body.md"
-            new_issue "Vulnerability autofix needs a human"
-          elif [[ -z "$PR_URL" && "$JOB_STATUS" == "failure" ]]; then
-            if [[ -n "$open_failure" ]]; then
-              echo "A failed run is already reported in issue #$open_failure, so it is not reported again."
-              echo "failure-already-reported=true" >> "$GITHUB_OUTPUT"
-            else
-              {
-                echo "$failure_marker"
-                echo "The vulnerability autofix workflow failed before it could finish, so fixable vulnerabilities may be open."
-                echo
-                echo "First failed run: $RUN_URL"
-                echo
-                echo "Later failed runs are not reported while this issue is open. The first run that does not fail closes it."
-              } > "$RUNNER_TEMP/issue-body.md"
-              new_issue "Vulnerability autofix workflow is failing"
-            fi
-          elif [[ "$JOB_STATUS" == "success" && -n "$open_failure" ]]; then
-            gh issue close "$open_failure" --repo "$REPO" --comment "A later run finished without failing: $RUN_URL"
-          fi
+      # ---- Step E: Slack ---------------------------------------------------------------------------------------
 
       - name: Notify Slack
         if: always()
@@ -768,9 +670,6 @@ jobs:
           CHANNEL: ${{ inputs.slack-channel-id || secrets.SLACK_CHANNEL_ID }}
           JOB_STATUS: ${{ job.status }}
           PR_URL: ${{ steps.pr.outputs.pr-url }}
-          FAILED_PR_URL: ${{ steps.failed-pr.outputs.pr-url }}
-          ISSUE_URL: ${{ steps.issue.outputs.issue-url }}
-          FAILURE_ALREADY_REPORTED: ${{ steps.issue.outputs.failure-already-reported }}
           NEEDS_HUMAN: ${{ steps.pr.outputs.needs-human }}
           TOP_SEVERITY: ${{ steps.gate.outputs.top-severity }}
           REPO: ${{ github.repository }}
@@ -778,9 +677,7 @@ jobs:
         run: |
           read_file() { [[ -f "$RUNNER_TEMP/$1" ]] && cat "$RUNNER_TEMP/$1" || true; }
 
-          if [[ -n "$FAILED_PR_URL" ]]; then
-            text=":warning: *Security fix pull request has failed checks and needs a human* in *${REPO}*"$'\n\n'"*Pull request:* ${FAILED_PR_URL}"$'\n'"*Failed checks:* $(read_file failed-checks.txt)"$'\n'"It will not merge by itself, so the vulnerabilities it targets are still open. This is reported once."$'\n\n'"Run: ${RUN_URL}"
-          elif [[ -n "$PR_URL" && "$NEEDS_HUMAN" == "true" ]]; then
+          if [[ -n "$PR_URL" && "$NEEDS_HUMAN" == "true" ]]; then
             case "$TOP_SEVERITY" in
               critical) header=":rotating_light: *CRITICAL vulnerability: first-pass fix opened, more work needed* in *${REPO}*" ;;
               high) header=":rotating_light: *HIGH severity vulnerability: first-pass fix opened, more work needed* in *${REPO}*" ;;
@@ -795,12 +692,9 @@ jobs:
             esac
             text="${header}"$'\n\n'"*Vulnerabilities*"$'\n'"$(read_file summary.md)"$'\n\n'"*Pull request:* ${PR_URL}"$'\n'"*Merge status:* $(read_file merge-status.txt)"$'\n'"*Not fixed until it is merged and deployed.* Merging does not deploy it."$'\n\n'"*Side effects*"$'\n'"$(read_file side-effects.md)"$'\n\n'"Run: ${RUN_URL}"
           elif [[ -s "$RUNNER_TEMP/problems.txt" ]]; then
-            text=":sos: *Vulnerability autofix needs a human* in *${REPO}*. A fix is published but no pull request was opened."$'\n\n'"*Reason:*"$'\n'"$(sed 's/^/- /' "$RUNNER_TEMP/problems.txt")"$'\n\n'"*Fixable vulnerabilities still open*"$'\n'"$(read_file targets.md)"$'\n\n'"*Issue:* ${ISSUE_URL:-could not be opened, so this message repeats on the next run}"$'\n'"This is not reported again while the issue is open. Close it to let the next run try again."$'\n\n'"Run: ${RUN_URL}"
-          elif [[ "$JOB_STATUS" == "failure" && "$FAILURE_ALREADY_REPORTED" == "true" ]]; then
-            echo "This failure is already reported in an open issue, so it is not posted again."
-            exit 0
+            text=":sos: *Vulnerability autofix needs a human* in *${REPO}*. A fix is published but no pull request was opened."$'\n\n'"*Reason:*"$'\n'"$(sed 's/^/- /' "$RUNNER_TEMP/problems.txt")"$'\n\n'"*Fixable vulnerabilities still open*"$'\n'"$(read_file targets.md)"$'\n\n'"Run: ${RUN_URL}"
           elif [[ "$JOB_STATUS" == "failure" ]]; then
-            text=":x: *Vulnerability autofix failed* in *${REPO}* before it could finish, so fixable vulnerabilities may be open. Check the run: ${RUN_URL}"$'\n'"*Issue:* ${ISSUE_URL:-could not be opened, so this message repeats on the next run}"$'\n'"Later failed runs are not posted while the issue is open. The first run that does not fail closes it."
+            text=":x: *Vulnerability autofix failed* in *${REPO}* before it could finish, so fixable vulnerabilities may be open. Check the run: ${RUN_URL}"
           else
             echo "Nothing was done, so there is nothing to report."
             exit 0
