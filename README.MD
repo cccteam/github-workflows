@@ -213,7 +213,7 @@ Each component keeps one root folder per environment, numbered in promotion orde
 
 The `environment-consistency` job finds every folder named `<number>-<code>`, where the code is one of `environment_codes`, and groups the folders by parent directory. It compares each folder with the one before it in promotion order (`1-dev` with `2-tst`, `2-tst` with `4-prd`), so each difference shows up at the step where it starts. Only OpenTofu files are compared (`environment_include_files`: `*.tf`, `*.tf.json` and `.terraform.lock.hcl`), at any depth. A file in one folder and not the other fails the check, and so does any line that differs, except for these:
 
-- In every `environment_backend_file` (`initialize.tf`), the quoted values of `environment_masked_keys` are masked. The defaults cover the Scalr workspace and Scalr environment in the `cloud` block (`name`, `organization`), the same in `scalr_outputs` data sources (`workspace`, `environment`), and a hardcoded `environment` tag. A region root such as `1-int/us-east-1/initialize.tf` is masked too.
+- Quoted values inside the `cloud` or `backend` block of the `terraform` block, and inside `data "scalr_outputs"` blocks, are masked in every file. These hold the Scalr workspace, organization and environment. The block header is still compared, so switching one environment to a different backend type shows up. Values outside those blocks are compared, so an `environment` tag must come from a variable (`environment = var.environment`), not a quoted name.
 - `import`, `moved` and `removed` blocks, and the comment lines directly above them, are skipped in every file. Import IDs differ per environment, and the blocks are deleted once every environment has applied them. A file left with nothing else in it, such as an `import.tf`, counts as absent.
 - Blank lines are skipped. Every other comment is compared like code, so a comment that names one environment fails the check.
 - Files matching `environment_ignore_files` are skipped. It's empty by default.
@@ -239,8 +239,6 @@ The pull request comment lists the files that differ (the first 50) and links to
 | `environment_consistency` | `warn` | `warn`, `fail` or `off` |
 | `environment_working_directory` | `.` | Directory to search |
 | `environment_codes` | `dev,int,tst,uat,stg,prd` | Environment codes whose folders are compared |
-| `environment_backend_file` | `initialize.tf` | File name whose `environment_masked_keys` values may differ |
-| `environment_masked_keys` | `name,organization,workspace,environment` | Keys whose quoted values may differ in `environment_backend_file` |
 | `environment_include_files` | `*.tf,*.tf.json,.terraform.lock.hcl` | Comma-separated glob patterns, matched against file names, of the files compared |
 | `environment_ignore_files` | | Comma-separated glob patterns, matched against file names, left out |
 

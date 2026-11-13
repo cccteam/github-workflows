@@ -19,10 +19,9 @@
 #    order (1-dev with 2-tst, 2-tst with 4-prd), file by file at any depth. Only
 #    OpenTofu files are compared (environment_include_files). These differences
 #    are allowed:
-#     - In every environment_backend_file (initialize.tf), the quoted values of
-#       environment_masked_keys: the Scalr workspace and Scalr environment in
-#       the cloud block (name, organization) and in scalr_outputs data sources
-#       (workspace, environment), and an environment tag.
+#     - Quoted values inside the cloud or backend block of the terraform block
+#       and inside scalr_outputs data sources, in any file: the Scalr workspace,
+#       organization and environment.
 #     - import, moved and removed blocks, with the comment lines directly above
 #       them. Import IDs differ per environment, and the blocks are deleted once
 #       every environment has applied them. A file left with nothing else in it
@@ -101,16 +100,6 @@ on:
         required: false
         type: string
         default: 'dev,int,tst,uat,stg,prd'
-      environment_backend_file:
-        description: 'File name, at any depth in an environment folder, in which the values of environment_masked_keys may differ'
-        required: false
-        type: string
-        default: 'initialize.tf'
-      environment_masked_keys:
-        description: 'Comma-separated keys whose quoted string values may differ in environment_backend_file'
-        required: false
-        type: string
-        default: 'name,organization,workspace,environment'
       environment_include_files:
         description: 'Comma-separated glob patterns, matched against file names at any depth, of the files the environment comparison covers'
         required: false
@@ -428,8 +417,6 @@ jobs:
           MODE: ${{ inputs.environment_consistency }}
           WORKING_DIRECTORY: ${{ inputs.environment_working_directory }}
           ENVIRONMENTS: ${{ inputs.environment_codes }}
-          BACKEND_FILE: ${{ inputs.environment_backend_file }}
-          MASKED_KEYS: ${{ inputs.environment_masked_keys }}
           INCLUDE_FILES: ${{ inputs.environment_include_files }}
           IGNORE_FILES: ${{ inputs.environment_ignore_files }}
         run: |
@@ -450,8 +437,6 @@ jobs:
           env_regex="(^|/)[0-9]+-(${env_codes//,/|})$"
           IFS=, read -ra include_patterns <<< "${INCLUDE_FILES//[[:space:]]/}"
           IFS=, read -ra ignore_patterns <<< "${IGNORE_FILES//[[:space:]]/}"
-          masked_keys="${MASKED_KEYS//[[:space:]]/}"
-          masked_keys="${masked_keys//,/|}"
           differences=0
 
           # Whether a file name matches one of the glob patterns that follow it.
@@ -465,17 +450,43 @@ jobs:
             return 1
           }
 
-          # A file's content, with what may differ removed: the masked values in
-          # the backend file, import, moved and removed blocks with the comment
-          # lines directly above them, and blank lines. Other comments stay.
-          # tofu fmt starts and ends top-level blocks in the first column.
+          # A file's content, with what may differ removed: the quoted strings
+          # inside a cloud or backend block of the terraform block and inside a
+          # scalr_outputs data source, import, moved and removed blocks with the
+          # comment lines directly above them, and blank lines. Other comments
+          # stay. tofu fmt starts and ends top-level blocks in the first column.
           normalized() {
             local dir=$1 file=$2
-            if [[ ${file##*/} == "$BACKEND_FILE" ]]; then
-              sed -E 's/((^|[{[:space:]])('"$masked_keys"')[[:space:]]*=[[:space:]]*)"[^"]*"/\1"<per-environment>"/g' "$dir/$file"
-            else
-              cat "$dir/$file"
-            fi | awk '
+            awk '
+              # Braces opened minus braces closed, outside strings and comments.
+              function depth_change(text) {
+                gsub(/"([^"\\]|\\.)*"/, "", text)
+                sub(/(#|\/\/).*/, "", text)
+                return gsub(/\{/, "{", text) - gsub(/\}/, "}", text)
+              }
+              function mask(text) {
+                gsub(/"([^"\\]|\\.)*"/, "\"<per-environment>\"", text)
+                return text
+              }
+              {
+                line = $0
+                if (masking) {
+                  line = mask(line)
+                } else if ((depth == 0 && /^data[[:space:]]+"scalr_outputs"[[:space:]]+"[^"]*"[[:space:]]*\{/) ||
+                    (in_terraform && depth == 1 && /^[[:space:]]*(cloud|backend[[:space:]]+"[^"]*")[[:space:]]*\{/)) {
+                  # Keep the block header, so a changed backend type still shows.
+                  open = index(line, "{")
+                  line = substr(line, 1, open) mask(substr(line, open + 1))
+                  masking = 1
+                  masked_depth = depth
+                }
+                if (depth == 0 && /^terraform[[:space:]]*\{/) in_terraform = 1
+                depth += depth_change($0)
+                if (depth == 0) in_terraform = 0
+                if (masking && depth <= masked_depth) masking = 0
+                print line
+              }
+            ' "$dir/$file" | awk '
               skip { if (/^}/) skip = 0; next }
               /^[[:space:]]*(#|\/\/)/ { held = held $0 "\n"; next }
               /^(import|moved|removed)[[:space:]]*\{/ { held = ""; if (!/}[[:space:]]*$/) skip = 1; next }
