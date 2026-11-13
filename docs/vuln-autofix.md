@@ -8,7 +8,7 @@
 2. **Dedupe.** If an open `claude/vuln-autofix/*` pull request already carries the same fix (matched by a marker in its body), the run ends.
 3. **Fix.** [`anthropics/claude-code-action`](https://github.com/anthropics/claude-code-action) runs on a new branch `claude/vuln-autofix/<date>-<run id>` with a short tool allow-list (read-only file tools, `go get/mod/build/vet/test`, `npm update/install/ci/ls/run build/test`, read-only git). Its prompt names only the packages and their minimum fixed versions.
 4. **Guards (deterministic).** The result is checked for:
-   - only `go.mod`, `go.sum`, `go.work`, `go.work.sum`, `package.json` and `package-lock.json` changed (plus anything matching `extra-allowed-files-regex`). Changes under `.github/` are always reverted and never pushed;
+   - only `go.mod`, `go.sum`, `go.work`, `go.work.sum`, `package.json` and `package-lock.json` changed (plus anything matching `extra-allowed-files-regex`). Changes under `.github/` are always reverted and never pushed, and a new file that is not one of these (for example a binary written by `go build`) is left out of the commit;
    - `go.mod` gained no `replace`, `exclude` or `retract`, and `package.json` changed only its dependency sections;
    - no dependency changed major version;
    - the fixed versions are reached, the code still builds (`go build ./...`, `npm ci` and `npm run build --if-present`), and a fresh `govulncheck` run reports no fixable vulnerability. Tests run in the pull request's own CI.

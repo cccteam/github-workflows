@@ -104,6 +104,12 @@ mkdir -p "$r/.github/workflows" && echo 'on: push' > "$r/.github/workflows/evil.
 check "a change under .github is reverted and flagged, the dependency bump is kept" \
   "$(flagged "$r" '.github' && [[ ! -e "$r/.github/workflows/evil.yml" ]] && git -C "$r" diff --cached --name-only | grep -qx go.mod && echo true || echo false)"
 
+r=$(new_repo newfile)
+sed -i 's/v0.20.0/v0.23.0/' "$r/go.mod"
+echo binary > "$r/app" && echo sums > "$r/go.sum"
+check "a new file that is not a dependency file is flagged and left out, a new go.sum is included" \
+  "$(flagged "$r" 'not included: app' && [[ "$(git -C "$r" diff --cached --name-only | sort | tr '\n' ' ')" == "go.mod go.sum " ]] && echo true || echo false)"
+
 r=$(new_repo major)
 sed -i 's#golang.org/x/net v0.20.0#golang.org/x/net v1.0.0#' "$r/go.mod"
 check "a major version change is flagged and kept" "$(yes flagged "$r" 'major')"

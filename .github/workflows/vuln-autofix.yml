@@ -312,16 +312,29 @@ jobs:
             problem "The Claude step did not finish successfully (outcome: $CLAUDE_OUTCOME), so the first-pass fix may be incomplete."
           fi
 
-          # Fold in anything Claude committed or left untracked, then compare against the starting commit
+          allowed='^(.*/)?(go\.mod|go\.sum|go\.work|go\.work\.sum|package\.json|package-lock\.json)$'
+          is_allowed() { [[ "$1" =~ $allowed ]] || { [[ -n "$EXTRA_ALLOWED" ]] && [[ "$1" =~ $EXTRA_ALLOWED ]]; }; }
+
+          # Fold in anything Claude committed, then stage the changes to files git already tracks
           git reset --soft "$BASE_SHA"
-          git add -A
+          git add -u
 
           # Workflow files are never pushed from here: a branch with changed workflows could run them with secrets
-          if [[ -n "$(git diff --cached --name-only -- .github)" ]]; then
+          if [[ -n "$(git status --porcelain -- .github)" ]]; then
             git reset -q "$BASE_SHA" -- .github
             git checkout -q -- .github 2>/dev/null || true
             git clean -fdq -- .github
             problem "The change touched files under .github, which were reverted and not included."
+          fi
+
+          # A new file is included only when it is an allowed dependency file. Anything else that is new (a
+          # binary written by go build, test output) stays out of the commit and is reported.
+          left_out=()
+          while IFS= read -r -d '' f; do
+            if is_allowed "$f"; then git add -- "$f"; else left_out+=("$f"); fi
+          done < <(git ls-files --others --exclude-standard -z)
+          if [[ ${#left_out[@]} -gt 0 ]]; then
+            problem "The change created new files outside the allowed dependency files, which were not included: ${left_out[*]}"
           fi
 
           mapfile -d '' -t files < <(git diff --cached --name-only -z)
@@ -331,12 +344,9 @@ jobs:
             exit 0
           fi
 
-          allowed='^(.*/)?(go\.mod|go\.sum|go\.work|go\.work\.sum|package\.json|package-lock\.json)$'
           disallowed=()
           for f in "${files[@]}"; do
-            if [[ ! "$f" =~ $allowed ]] && { [[ -z "$EXTRA_ALLOWED" ]] || [[ ! "$f" =~ $EXTRA_ALLOWED ]]; }; then
-              disallowed+=("$f")
-            fi
+            is_allowed "$f" || disallowed+=("$f")
           done
           if [[ ${#disallowed[@]} -gt 0 ]]; then
             problem "The change touched files outside the allowed dependency files (review them): ${disallowed[*]}"
