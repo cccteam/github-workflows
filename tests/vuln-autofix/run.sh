@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Fixture checks for the gate and the diff guard of .github/workflows/vuln-autofix.yml.
+# Fixture checks for the gate, the bump and the pull request steps of .github/workflows/vuln-autofix.yml.
 # It runs the workflow's own `run` scripts. Needs bash, git, jq and python3 with PyYAML.
 set -euo pipefail
 
@@ -35,113 +35,137 @@ check "fixed Dependabot alert and govulncheck finding merge into one entry" \
   "$(has 'map(select(.package == "golang.org/x/net")) | length == 1 and .[0].fixed == "v0.23.0" and .[0].severity == "high" and (.[0].sources | length == 2)')"
 check "stdlib finding selected as go-stdlib with its fixed version" \
   "$(has 'any(.ecosystem == "go-stdlib" and .fixed == "v1.27.4" and (.ids | index("GO-2026-6859")))')"
-check "two actionable entries, top severity high" "$([[ "$(jq length "$out")" == 2 && "$(grep -c '^top-severity=high$' "$GITHUB_OUTPUT")" == 1 ]] && echo true || echo false)"
+check "two actionable entries, highest severity first" "$([[ "$(jq length "$out")" == 2 && "$(jq -r '.[0].severity' "$out")" == high && "$(grep -c '^count=2$' "$GITHUB_OUTPUT")" == 1 ]] && echo true || echo false)"
 
-# --- diff guard -------------------------------------------------------------------------------------------
-# A failed guard no longer discards the change: it records a problem and keeps the first-pass diff.
-step guard
-step pr
-guard() { # repo dir -> runs the guard in it
-  : > "$GITHUB_OUTPUT"
-  rm -f "$RUNNER_TEMP/problems.txt"
-  (cd "$1" && BASE_SHA=$(git rev-parse HEAD) bash -eo pipefail "$work/guard.sh" > /dev/null 2>&1)
-}
-clean() { guard "$1"; [[ ! -s "$RUNNER_TEMP/problems.txt" ]] && grep -q '^has-diff=true$' "$GITHUB_OUTPUT"; }
-flagged() { # repo dir, pattern: diff kept, problem recorded
-  guard "$1"; grep -q '^has-diff=true$' "$GITHUB_OUTPUT" && grep -q "$2" "$RUNNER_TEMP/problems.txt"
-}
-yes() { "$@" && echo true || echo false; }
+# --- bump and check ---------------------------------------------------------------------------------------
+# The step runs against small git repositories with fake go, npm and govulncheck commands:
+#  go: reads and rewrites go.mod. npm install rewrites every copy in the lock file, npm update changes nothing.
+#  govulncheck: prints $GOVULNCHECK_OUT.
+step fix
+fakebin="$work/bin"; mkdir -p "$fakebin"
+cat > "$fakebin/go" <<'GO'
+#!/usr/bin/env bash
+echo "go $*" >> "$TOOL_LOG"
+case "$1 $2" in
+  "list -m") awk -v m="$5" '$1 == m {print $2}' go.mod ;;
+  "mod edit") jq -n --arg g "$(awk '$1 == "go" {print $2}' go.mod)" '{Go: $g}' ;;
+  "get "*)
+    mod=${2%@*}; ver=${2#*@}
+    if [[ "$mod" == go ]]; then sed -i "s/^go .*/go $ver/" go.mod; else sed -i "s#$mod v[^ ]*#$mod $ver#" go.mod; fi ;;
+esac
+GO
+cat > "$fakebin/npm" <<'NPM'
+#!/usr/bin/env bash
+echo "npm $*" >> "$TOOL_LOG"
+if [[ "$1" == install ]]; then
+  jq --arg p "${2%@*}" --arg v "${2##*@}" '.packages |= with_entries(if (.key | endswith("node_modules/" + $p)) then .value.version = $v else . end)' package-lock.json > lock.tmp && mv lock.tmp package-lock.json
+fi
+NPM
+printf '#!/usr/bin/env bash\nprintf "%%s" "${GOVULNCHECK_OUT:-}"\n' > "$fakebin/govulncheck"
+chmod +x "$fakebin"/*
+
 new_repo() {
   local d="$work/repo-$1"
   mkdir -p "$d"
   git -C "$d" init -q
   git -C "$d" config user.email t@example.com
   git -C "$d" config user.name t
-  printf 'module example.com/app\n\ngo 1.26\n\nrequire (\n\tgolang.org/x/net v0.20.0\n)\n' > "$d/go.mod"
-  printf 'package main\n\nfunc main() {}\n' > "$d/main.go"
+  printf 'module example.com/app\n\ngo 1.27.1\n\nrequire (\n\tgolang.org/x/net v0.20.0\n\texample.com/old v0.9.0\n)\n' > "$d/go.mod"
+  printf '{"name":"a","dependencies":{"direct":"1.0.0"}}\n' > "$d/package.json"
+  printf '{"packages":{"":{},"node_modules/direct":{"version":"1.0.0"},"node_modules/transitive":{"version":"2.0.0"},"node_modules/oldmajor":{"version":"1.4.0"}}}\n' > "$d/package-lock.json"
+  printf 'FROM golang:1.27.1\n' > "$d/Dockerfile"
   git -C "$d" add -A
   git -C "$d" commit -q -m init
   echo "$d"
 }
+vuln() { jq -nc --arg e "$1" --arg p "$2" --arg f "$3" '{ecosystem: $e, package: $p, fixed: $f, ids: ["CVE-" + $p], severity: "high"}'; }
+fix() { # repo dir, vulnerabilities... -> runs the step
+  local d=$1; shift
+  printf '%s\n' "$@" | jq -s . > "$RUNNER_TEMP/actionable.json"
+  : > "$GITHUB_OUTPUT"; : > "$work/tool.log"
+  (cd "$d" && PATH="$fakebin:$PATH" TOOL_LOG="$work/tool.log" bash -eo pipefail "$work/fix.sh" > "$work/fix.log" 2>&1)
+}
+yes() { "$@" && echo true || echo false; }
+reason() { jq -r --arg p "$1" '.[] | select(.package == $p) | .reason' "$RUNNER_TEMP/results.json"; }
+at() { git -C "$r" show "$(sed -n "s/^$1=//p" "$GITHUB_OUTPUT"):$2"; } # output name, file -> the file in that commit
 
-r=$(new_repo ok)
-sed -i 's/v0.20.0/v0.23.0/' "$r/go.mod"
-check "minor bump of go.mod passes every guard" "$(yes clean "$r")"
-check "summary shows old to new" "$(yes grep -q 'v0.20.0 -> v0.23.0' "$RUNNER_TEMP/summary.md")"
+r=$(new_repo pass)
+fix "$r" "$(vuln go golang.org/x/net v0.23.0)" "$(vuln npm direct 1.0.1)"
+check "passing bumps: one commit each, no reason, no first-pass commit" \
+  "$([[ "$(reason golang.org/x/net)$(reason direct)" == "" && "$(git -C "$r" rev-list --count HEAD)" == 3 ]] && grep -q '^clean=' "$GITHUB_OUTPUT" && ! grep -q '^draft=' "$GITHUB_OUTPUT" && echo true || echo false)"
+check "go module is bumped with go get, a direct npm package with npm install, without install scripts" \
+  "$(yes bash -c "grep -qx 'go get golang.org/x/net@v0.23.0' '$work/tool.log' && grep -qx 'npm install direct@1.0.1 --package-lock-only --ignore-scripts --save-exact' '$work/tool.log'")"
 
-# PR step with a fake gh and a local bare remote: records how the pull request is created
-fakebin="$work/bin"; mkdir -p "$fakebin" "$work/remotes/o"
+r=$(new_repo mixed)
+fix "$r" "$(vuln go golang.org/x/net v0.23.0)" "$(vuln go example.com/old v1.2.0)"
+check "a major version change is left for a human and does not hold back the other package" \
+  "$([[ "$(reason golang.org/x/net)" == "" && "$(reason example.com/old)" == *"major version change"* ]] && at clean go.mod | grep -q 'x/net v0.23.0' && at clean go.mod | grep -q 'old v0.9.0' && echo true || echo false)"
+check "the first-pass commit holds the bump that was left out" "$(yes bash -c "git -C '$r' show '$(sed -n 's/^draft=//p' "$GITHUB_OUTPUT")':go.mod | grep -q 'old v1.2.0'")"
+
+r=$(new_repo npm)
+fix "$r" "$(vuln npm transitive 2.0.1)" "$(vuln npm oldmajor 2.0.1)"
+check "npm: a transitive package is bumped with npm update, and a copy still below the fix is reported" \
+  "$([[ "$(reason transitive)" == *"still 2.0.0"* ]] && grep -qx 'npm update transitive --package-lock-only --ignore-scripts' "$work/tool.log" && echo true || echo false)"
+check "npm: a copy on an older major than the fix is reported and not bumped" \
+  "$([[ "$(reason oldmajor)" == *"major version change, 1.4.0 to 2.0.1"* ]] && ! grep -q '^clean=' "$GITHUB_OUTPUT" && echo true || echo false)"
+
+r=$(new_repo stdlib)
+fix "$r" "$(vuln go-stdlib stdlib v1.27.4)"
+check "go directive bump with an older golang image in a Dockerfile is left for a human, with a first pass" \
+  "$([[ "$(reason stdlib)" == *"Dockerfile uses golang:1.27.1"* ]] && ! grep -q '^clean=' "$GITHUB_OUTPUT" && at draft go.mod | grep -qx 'go 1.27.4' && echo true || echo false)"
+
+r=$(new_repo still)
+GOVULNCHECK_OUT='{"osv":{"id":"GO-1","aliases":[]}}{"finding":{"osv":"GO-1","fixed_version":"v0.24.0","trace":[{"module":"golang.org/x/net","function":"F"}]}}' \
+  fix "$r" "$(vuln go golang.org/x/net v0.23.0)"
+check "a package govulncheck still reports after the bump is left for a human" "$([[ "$(reason golang.org/x/net)" == *"still reports"* ]] && echo true || echo false)"
+
+# --- pull requests ----------------------------------------------------------------------------------------
+# The step runs with a fake gh and a local bare repository as the remote
+step pr
+mkdir -p "$work/remotes/o"
 git init -q --bare "$work/remotes/o/r.git"
 cat > "$fakebin/gh" <<'GH'
 #!/usr/bin/env bash
 echo "$*" >> "$GH_LOG"
 [[ "$1 $2" == "pr create" ]] && echo "https://example.com/o/r/pull/1"
-[[ "$1 $2" == "pr list" ]] && echo "${GH_OPEN_PR:-}"
+[[ "$1 $2" == "pr list" && " $* " == *" $GH_OPEN_HEAD "* ]] && echo "https://example.com/o/r/pull/9"
 exit 0
 GH
 chmod +x "$fakebin/gh"
-open_pr() { # repo dir -> runs the PR step in it
-  : > "$GITHUB_OUTPUT"; : > "$work/gh.log"
-  (cd "$1" && PATH="$fakebin:$PATH" GH_LOG="$work/gh.log" GH_TOKEN=x REPO=o/r GITHUB_SERVER_URL="file://$work/remotes" \
-    BRANCH="b-$(basename "$1")" BASE_BRANCH=master TOP_SEVERITY=high \
-    AUTO_MERGE=true RUN_URL=u bash -eo pipefail "$work/pr.sh" > /dev/null 2>&1)
+prs() { # repo dir, head branch that has an open pull request -> runs the step on the last fix result
+  : > "$work/gh.log"; rm -f "$RUNNER_TEMP/slack.txt"
+  (cd "$1" && PATH="$fakebin:$PATH" GH_LOG="$work/gh.log" GH_OPEN_HEAD="${2:-none}" GH_TOKEN=x REPO=o/r GITHUB_SERVER_URL="file://$work/remotes" \
+    BRANCH=vuln-autofix BASE_BRANCH=master AUTO_MERGE=true RUN_URL=u \
+    BASE="$(sed -n 's/^base=//p' "$GITHUB_OUTPUT")" CLEAN="$(sed -n 's/^clean=//p' "$GITHUB_OUTPUT")" DRAFT="$(sed -n 's/^draft=//p' "$GITHUB_OUTPUT")" \
+    bash -eo pipefail "$work/pr.sh" > "$work/pr.log" 2>&1)
 }
-clean "$r"; open_pr "$r"
-check "clean path: ready PR (not draft) with auto-merge enabled" \
-  "$(yes bash -c "grep -q 'pr create' '$work/gh.log' && ! grep -q -- '--draft' '$work/gh.log' && ! grep -q 'needs-human' '$work/gh.log' && grep -q 'pr merge .* --auto --squash' '$work/gh.log' && grep -q '^needs-human=false$' '$GITHUB_OUTPUT'")"
+remote_has() { git -C "$work/remotes/o/r.git" show "$1:go.mod" 2> /dev/null | grep -q "$2"; }
 
-r=$(new_repo extra)
-sed -i 's/v0.20.0/v0.23.0/' "$r/go.mod"
-printf '// changed\n' >> "$r/main.go"
-check "a source file in the diff is flagged and kept" "$(yes flagged "$r" 'main.go')"
-open_pr "$r"
-check "guard failure: draft PR labelled needs-human, auto-merge never enabled" \
-  "$(yes bash -c "grep -q -- '--draft' '$work/gh.log' && grep -q 'needs-human' '$work/gh.log' && ! grep -q 'pr merge' '$work/gh.log' && grep -q '^needs-human=true$' '$GITHUB_OUTPUT' && grep -q 'main.go' '$RUNNER_TEMP/pr-body.md'")"
-check "first-pass branch was pushed" "$(yes git -C "$work/remotes/o/r.git" show-ref --verify -q "refs/heads/b-repo-extra")"
+r=$(new_repo pr-mixed)
+fix "$r" "$(vuln go golang.org/x/net v0.23.0)" "$(vuln go example.com/old v1.2.0)"
+prs "$r"
+check "passing packages: ready pull request with auto-merge" \
+  "$(yes bash -c "grep -q 'pr create .*--head vuln-autofix --title .*--label dependencies,security\$' '$work/gh.log' && grep -q 'pr merge .* --auto --squash' '$work/gh.log'")"
+check "passing branch holds only the passing bump" "$(remote_has vuln-autofix 'x/net v0.23.0' && remote_has vuln-autofix 'old v0.9.0' && echo true || echo false)"
+check "packages left for a human: draft pull request labelled needs-human on its own branch, with the reason in the body" \
+  "$(yes bash -c "grep -q 'pr create .*--head vuln-autofix-needs-human .*--draft --label dependencies,security,needs-human' '$work/gh.log' && [[ \$(grep -c 'pr merge' '$work/gh.log') == 1 ]] && grep -q 'major version change' '$RUNNER_TEMP/body.md' && grep -q 'v0.9.0 -> v1.2.0' '$RUNNER_TEMP/body.md'")"
+check "draft branch holds the first-pass bump" "$(yes remote_has vuln-autofix-needs-human 'old v1.2.0')"
+check "Slack text names the package left for a human and the draft pull request" \
+  "$(yes bash -c "grep -q 'example.com/old' '$RUNNER_TEMP/slack.txt' && grep -q 'Draft pull request with the first pass: https://example.com/o/r/pull/1' '$RUNNER_TEMP/slack.txt'")"
 
-r=$(new_repo update)
-sed -i 's/v0.20.0/v0.23.0/' "$r/go.mod"
-clean "$r"; GH_OPEN_PR=https://example.com/o/r/pull/1 open_pr "$r"
-check "open pull request for the branch: updated, not opened again, not reported again" \
-  "$(yes bash -c "grep -q 'pr edit' '$work/gh.log' && ! grep -q 'pr create' '$work/gh.log' && ! grep -q '^pr-url=' '$GITHUB_OUTPUT'")"
+prs "$r" vuln-autofix
+check "open pull request for the branch: updated, not opened again" \
+  "$(yes bash -c "grep -q 'pr edit https://example.com/o/r/pull/9' '$work/gh.log' && ! grep -q 'pr create .*--head vuln-autofix --title' '$work/gh.log'")"
 
-r=$(new_repo major)
-sed -i 's#golang.org/x/net v0.20.0#golang.org/x/net v1.0.0#' "$r/go.mod"
-check "a major version change is flagged and kept" "$(yes flagged "$r" 'major')"
+prs "$r" vuln-autofix-needs-human
+check "open draft pull request: left as it is and not reported again" \
+  "$(yes bash -c "! grep -q 'pr create .*needs-human' '$work/gh.log' && ! grep -q 'needs a human' '$RUNNER_TEMP/slack.txt'")"
 
-r=$(new_repo nochange)
-guard "$r"
-check "no change: no diff, problem recorded, no PR" "$(yes bash -c "grep -q '^has-diff=false$' '$GITHUB_OUTPUT' && grep -q 'no change' '$RUNNER_TEMP/problems.txt'")"
-
-# --- bump -------------------------------------------------------------------------------------------------
-# The bump step with fake go and npm: records the commands it runs
-step fix
-for tool in go npm; do printf '#!/usr/bin/env bash\necho "%s $*" >> "$TOOL_LOG"\n' "$tool" > "$fakebin/$tool"; chmod +x "$fakebin/$tool"; done
-r=$(new_repo bump)
-printf '{"name":"a","dependencies":{"direct":"1.0.0"}}\n' > "$r/package.json"
-printf '[{"ecosystem":"go","package":"golang.org/x/net","fixed":"v0.23.0"},{"ecosystem":"go-stdlib","package":"stdlib","fixed":"v1.27.4"},{"ecosystem":"npm","package":"direct","fixed":"1.0.1"},{"ecosystem":"npm","package":"transitive","fixed":"2.0.1"}]' > "$RUNNER_TEMP/actionable.json"
-(cd "$r" && PATH="$fakebin:$PATH" TOOL_LOG="$work/tool.log" bash -eo pipefail "$work/fix.sh" > /dev/null 2>&1)
-check "bump runs go get for a module and for the go directive, npm install for a direct package and npm update for a transitive one" \
-  "$(yes bash -c "grep -qx 'go get golang.org/x/net@v0.23.0' '$work/tool.log' && grep -qx 'go get go@1.27.4' '$work/tool.log' && grep -qx 'npm install direct@1.0.1 --package-lock-only --ignore-scripts' '$work/tool.log' && grep -qx 'npm update transitive --package-lock-only --ignore-scripts' '$work/tool.log'")"
-
-# --- verify -----------------------------------------------------------------------------------------------
-# The npm version check, with fake go and govulncheck
-step verify
-printf '#!/usr/bin/env bash\n' > "$fakebin/govulncheck"; chmod +x "$fakebin/govulncheck"
-: > "$RUNNER_TEMP/gate.jq"; echo '[]' >> "$RUNNER_TEMP/gate.jq"
-echo '{"directives":{},"bumps":[]}' > "$RUNNER_TEMP/changes.json"
-verify() { # installed versions JSON, fixed version -> runs the verify step for npm package x
-  rm -f "$RUNNER_TEMP/problems.txt"
-  printf '[{"ecosystem":"npm","package":"x","fixed":"%s"}]' "$2" > "$RUNNER_TEMP/actionable.json"
-  jq -n --argjson v "$1" '{packages: ($v | to_entries | map({key: .key, value: {version: .value}}) | from_entries)}' > "$r/package-lock.json"
-  (cd "$r" && PATH="$fakebin:$PATH" TOOL_LOG=/dev/null GOVULNCHECK_VERSION=v bash -eo pipefail "$work/verify.sh" > /dev/null 2>&1)
-}
-verify '{"node_modules/x":"2.0.1","node_modules/a/node_modules/x":"3.1.0"}' 2.0.1
-check "npm: fixed version reached, a copy on a newer major is ignored" "$([[ ! -s "$RUNNER_TEMP/problems.txt" ]] && echo true || echo false)"
-verify '{"node_modules/x":"2.0.0"}' 2.0.1
-check "npm: a copy below the fixed version is flagged" "$(yes grep -q 'x is 2.0.0, needs 2.0.1' "$RUNNER_TEMP/problems.txt")"
-verify '{"node_modules/x":"1.0.0"}' 2.0.1
-check "npm: a copy on an older major than the fix is flagged" "$(yes grep -q 'x is 1.0.0 and the fix is only in a newer major version' "$RUNNER_TEMP/problems.txt")"
+r=$(new_repo pr-nodiff)
+fix "$r" "$(vuln npm oldmajor 2.0.1)"
+prs "$r"
+check "package left for a human whose bump changed nothing: no pull request, Slack says so" \
+  "$(yes bash -c "! grep -q 'pr create' '$work/gh.log' && grep -q 'No pull request holds a first pass' '$RUNNER_TEMP/slack.txt'")"
 
 if [[ $failures -gt 0 ]]; then echo "$failures check(s) failed"; exit 1; fi
 echo "all checks passed"
