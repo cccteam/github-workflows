@@ -60,9 +60,12 @@ on:
       DEPENDABOT_ALERTS_TOKEN:
         required: true
         description: Token that can read Dependabot alerts (GITHUB_TOKEN cannot). The same secret golang-security-scan uses.
-      AUTOFIX_TOKEN:
-        required: false
-        description: GitHub App token or PAT used to push the branch and open the pull request. Needed for CI to run on the pull request, because pull requests opened with GITHUB_TOKEN do not trigger workflows. Falls back to GITHUB_TOKEN.
+      AUTOFIX_APP_CLIENT_ID:
+        required: true
+        description: Client ID of the GitHub App that pushes the branch, opens the pull request and opens issues. A pull request opened with GITHUB_TOKEN does not trigger workflows, so its checks would never run. The app needs Contents, Pull requests and Issues write access on the repository.
+      AUTOFIX_APP_PEM:
+        required: true
+        description: Private key of that GitHub App
       ANTHROPIC_API_KEY:
         required: false
         description: Anthropic API key for Claude. One of ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN is required.
@@ -87,10 +90,12 @@ jobs:
     name: Vulnerability Autofix
     runs-on: ${{ inputs.runs-on }}
     timeout-minutes: 45
+    # Read only: everything that writes uses a GitHub App token created after the Claude step has finished,
+    # so no token that can write exists while Claude runs.
     permissions:
-      contents: write
-      pull-requests: write
-      issues: write
+      contents: read
+      pull-requests: read
+      issues: read
     defaults:
       run:
         shell: bash
@@ -99,7 +104,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # The token is handed to the push step only, so nothing Claude can read holds it
+          # The checkout keeps no token. The token that can push is created after the Claude step.
           persist-credentials: false
 
       - name: Set up Go
@@ -263,6 +268,9 @@ jobs:
         if: steps.dedupe.outputs.proceed == 'true'
         continue-on-error: true # the guards below report a failed run to Slack
         uses: anthropics/claude-code-action@4d75e5f390ee76b2e09c1980ecc99ff3a2e088c8 # v1.0.275
+        env:
+          # npm must not run package install scripts while Claude runs
+          npm_config_ignore_scripts: 'true'
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -505,11 +513,20 @@ jobs:
 
       # ---- Step D: pull request and auto-merge ----------------------------------------------------------------
 
+      # Created only now: the Claude step and the build above have finished, so neither could read this token
+      - name: Create the GitHub App token
+        id: app-token
+        if: always()
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ secrets.AUTOFIX_APP_CLIENT_ID }}
+          private-key: ${{ secrets.AUTOFIX_APP_PEM }}
+
       - name: Open pull request
         id: pr
         if: steps.guard.outputs.has-diff == 'true'
         env:
-          GH_TOKEN: ${{ secrets.AUTOFIX_TOKEN || github.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           REPO: ${{ github.repository }}
           BRANCH: ${{ steps.branch.outputs.name }}
           BASE_BRANCH: ${{ steps.branch.outputs.base-branch }}
@@ -618,7 +635,7 @@ jobs:
         id: issue
         if: always() && steps.dedupe.outputs.proceed == 'true' && steps.pr.outputs.pr-url == ''
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           REPO: ${{ github.repository }}
           KEY: ${{ steps.gate.outputs.key }}
           NEEDS_HUMAN_LABEL: ${{ inputs.needs-human-label }}

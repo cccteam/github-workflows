@@ -6,7 +6,7 @@
 
 1. **Gate (no LLM).** Collects open Dependabot alerts and, for Go, `govulncheck` findings. A vulnerability is actionable only when a fixed version is published (`first_patched_version` for Dependabot, `fixed_version` for govulncheck; a Go standard library finding is fixed by raising the `go` directive). Anything without a published fix is never touched. If nothing is actionable, the run ends here.
 2. **Dedupe.** If an open `claude/vuln-autofix/*` pull request already carries the same fix, or an open issue records that the same set of vulnerabilities could not be fixed (both matched by a marker in the body), the run ends.
-3. **Fix.** [`anthropics/claude-code-action`](https://github.com/anthropics/claude-code-action) runs on a new branch `claude/vuln-autofix/<date>-<run id>` with a short tool allow-list (read-only file tools, `go get/mod/list`, `npm update/install/ls`, read-only git). Its prompt names only the packages and their minimum fixed versions.
+3. **Fix.** [`anthropics/claude-code-action`](https://github.com/anthropics/claude-code-action) runs on a new branch `claude/vuln-autofix/<date>-<run id>` with a short tool allow-list (read-only file tools, `go get/mod/list`, `npm update/install/ls`, read-only git). Its prompt names only the packages and their minimum fixed versions. While it runs, the job token is read-only, the GitHub App token does not exist yet, and npm package install scripts are turned off.
 4. **Guards (deterministic).** The result is checked for:
    - only `go.mod`, `go.sum`, `go.work`, `go.work.sum`, `package.json` and `package-lock.json` changed (plus anything matching `extra-allowed-files-regex`). Changes under `.github/` are always reverted and never pushed, and a new file that is not one of these (for example a binary written by `go build`) is left out of the commit;
    - `go.mod` gained no `replace`, `exclude` or `retract`, and `package.json` changed only its dependency sections;
@@ -34,14 +34,15 @@ jobs:
     # Replace the ref with the first release that contains this workflow
     uses: cccteam/github-workflows/.github/workflows/vuln-autofix.yml@v8.4.0
     permissions:
-      contents: write
-      pull-requests: write
-      issues: write
+      contents: read
+      pull-requests: read
+      issues: read
     with:
       auto-merge: true
     secrets:
       DEPENDABOT_ALERTS_TOKEN: ${{ secrets.DEPENDABOT_ALERTS_TOKEN }}
-      AUTOFIX_TOKEN: ${{ secrets.AUTOFIX_TOKEN }}
+      AUTOFIX_APP_CLIENT_ID: ${{ secrets.AUTOFIX_APP_CLIENT_ID }}
+      AUTOFIX_APP_PEM: ${{ secrets.AUTOFIX_APP_PEM }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }} # or CLAUDE_CODE_OAUTH_TOKEN
       SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
       SLACK_CHANNEL_ID: ${{ secrets.SLACK_CHANNEL_ID }}
@@ -65,10 +66,10 @@ Do not give the calling workflow a `concurrency` group named `vuln-autofix-<repo
 ## Setup prerequisites
 
 - **`DEPENDABOT_ALERTS_TOKEN`**: the same secret `golang-security-scan` uses. `GITHUB_TOKEN` cannot read Dependabot alerts, so a PAT or GitHub App token with that read access is required.
-- **`AUTOFIX_TOKEN`** (GitHub App token or PAT, `contents` and `pull requests` write): pushes the branch and opens the pull request. Pull requests created with the default `GITHUB_TOKEN` do not trigger workflows, so without this secret the required checks never run and auto-merge never completes. It falls back to `GITHUB_TOKEN` (with "Allow GitHub Actions to create and approve pull requests" enabled), which is only useful where checks do not gate the merge. The token is handed to the push step only, never to Claude.
+- **`AUTOFIX_APP_CLIENT_ID`** and **`AUTOFIX_APP_PEM`**: client ID and private key of a GitHub App installed on the repository with Contents, Pull requests and Issues write access. The workflow creates a short-lived token from them after the Claude step has finished, and uses it to push the branch, open the pull request, enable auto-merge and open issues. The job's own `GITHUB_TOKEN` is read-only, so no token that can write exists while Claude runs. An app is required because pull requests opened with `GITHUB_TOKEN` do not trigger workflows, so their checks would never run.
 - **`ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`**: credential for Claude.
 - **`SLACK_BOT_TOKEN`** and **`SLACK_CHANNEL_ID`**: as for `golang-security-scan`.
-- **Auto-merge and branch protection**: enable "Allow auto-merge" on the repository. The bot cannot approve its own pull request, so the protected branch must either not require a human review for these pull requests or let the `AUTOFIX_TOKEN` identity bypass that rule through a ruleset. Checks that cannot pass on a bot PR (for example a closes-an-issue check) must be excluded for it. If auto-merge cannot be enabled, the PR stays open and Slack says a human needs to merge it.
+- **Auto-merge and branch protection**: enable "Allow auto-merge" on the repository. The bot cannot approve its own pull request, so the protected branch must either not require a human review for these pull requests or add the GitHub App as a bypass actor for that rule in a ruleset. Checks that cannot pass on a bot PR (for example a closes-an-issue check) must be excluded for it. If auto-merge cannot be enabled, the PR stays open and Slack says a human needs to merge it.
 - **Permissions**: the calling job must grant the permissions shown above, because a reusable workflow cannot exceed its caller.
 - **Across organizations**: a private repository's reusable workflows can be called only from repositories in the same organization (and only when its Actions access setting allows it). Repositories in another organization, for example AscendiumApps, need a copy of the workflow in their own organization, or this repository must allow access under its Settings > Actions > General > Access.
 
