@@ -447,7 +447,13 @@ jobs:
             case "$eco" in
               go)
                 cur=$(go list -m -f '{{.Version}}' "$pkg" 2>/dev/null || true)
-                [[ -z "$cur" ]] || ver_ge "$cur" "$fixed" || unmet+=("$pkg is $cur, needs $fixed")
+                # A version that cannot be read is not proof of a fix (Dependabot can name a package path
+                # that is not a module path), so it is reported instead of passed
+                if [[ -z "$cur" ]]; then
+                  unmet+=("the version of $pkg could not be read, needs $fixed")
+                elif ! ver_ge "$cur" "$fixed"; then
+                  unmet+=("$pkg is $cur, needs $fixed")
+                fi
                 ;;
               go-stdlib)
                 directive=$(go mod edit -json | jq -r '.Go // ""')
