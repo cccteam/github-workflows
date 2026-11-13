@@ -670,39 +670,63 @@ jobs:
 
       # ---- Step E: issue when no pull request could be opened, then Slack --------------------------------------
 
-      - name: Open an issue when no pull request was opened
+      - name: Record a run that needs a human in an issue
         id: issue
-        if: always() && steps.dedupe.outputs.proceed == 'true' && steps.pr.outputs.pr-url == ''
+        if: always() && steps.app-token.outputs.token != ''
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           REPO: ${{ github.repository }}
           KEY: ${{ steps.gate.outputs.key }}
+          PR_URL: ${{ steps.pr.outputs.pr-url }}
+          JOB_STATUS: ${{ job.status }}
           NEEDS_HUMAN_LABEL: ${{ inputs.needs-human-label }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          if [[ ! -s "$RUNNER_TEMP/problems.txt" ]]; then
-            echo "No problem was recorded, so there is nothing to put in an issue."
-            exit 0
-          fi
-          {
-            echo "<!-- vuln-autofix-key: $KEY -->"
-            echo "The vulnerability autofix workflow found vulnerabilities with a published fix, but could not open a pull request for them."
-            echo
-            echo "### Reason"
-            sed 's/^/- /' "$RUNNER_TEMP/problems.txt"
-            echo
-            echo "### Fixable vulnerabilities still open"
-            cat "$RUNNER_TEMP/targets.md"
-            echo
-            echo "While this issue is open the workflow does not try or report this same set of vulnerabilities again. Close it to let the next run try again."
-            echo
-            echo "Workflow run: $RUN_URL"
-          } > "$RUNNER_TEMP/issue-body.md"
-          gh label create "$NEEDS_HUMAN_LABEL" --repo "$REPO" > /dev/null 2>&1 || true
-          issue_url=$(gh issue create --repo "$REPO" --title "Vulnerability autofix needs a human" \
-            --body-file "$RUNNER_TEMP/issue-body.md" --label "$NEEDS_HUMAN_LABEL" | tail -n1)
-          echo "issue-url=$issue_url" >> "$GITHUB_OUTPUT"
+          # The issue that records a failed run carries this marker. At most one is open at a time.
+          failure_marker='<!-- vuln-autofix-failure -->'
+          open_failure=$(gh issue list --repo "$REPO" --state open --limit 100 --json number,body \
+            | jq -r --arg m "$failure_marker" 'map(select(.body | contains($m))) | .[0].number // empty')
+          new_issue() { # title: opens an issue from issue-body.md and records its URL
+            gh label create "$NEEDS_HUMAN_LABEL" --repo "$REPO" > /dev/null 2>&1 || true
+            issue_url=$(gh issue create --repo "$REPO" --title "$1" \
+              --body-file "$RUNNER_TEMP/issue-body.md" --label "$NEEDS_HUMAN_LABEL" | tail -n1)
+            echo "issue-url=$issue_url" >> "$GITHUB_OUTPUT"
+          }
 
+          if [[ -z "$PR_URL" && -s "$RUNNER_TEMP/problems.txt" ]]; then
+            {
+              echo "<!-- vuln-autofix-key: $KEY -->"
+              echo "The vulnerability autofix workflow found vulnerabilities with a published fix, but could not open a pull request for them."
+              echo
+              echo "### Reason"
+              sed 's/^/- /' "$RUNNER_TEMP/problems.txt"
+              echo
+              echo "### Fixable vulnerabilities still open"
+              cat "$RUNNER_TEMP/targets.md"
+              echo
+              echo "While this issue is open the workflow does not try or report this same set of vulnerabilities again. Close it to let the next run try again."
+              echo
+              echo "Workflow run: $RUN_URL"
+            } > "$RUNNER_TEMP/issue-body.md"
+            new_issue "Vulnerability autofix needs a human"
+          elif [[ -z "$PR_URL" && "$JOB_STATUS" == "failure" ]]; then
+            if [[ -n "$open_failure" ]]; then
+              echo "A failed run is already reported in issue #$open_failure, so it is not reported again."
+              echo "failure-already-reported=true" >> "$GITHUB_OUTPUT"
+            else
+              {
+                echo "$failure_marker"
+                echo "The vulnerability autofix workflow failed before it could finish, so fixable vulnerabilities may be open."
+                echo
+                echo "First failed run: $RUN_URL"
+                echo
+                echo "Later failed runs are not reported while this issue is open. The first run that does not fail closes it."
+              } > "$RUNNER_TEMP/issue-body.md"
+              new_issue "Vulnerability autofix workflow is failing"
+            fi
+          elif [[ "$JOB_STATUS" == "success" && -n "$open_failure" ]]; then
+            gh issue close "$open_failure" --repo "$REPO" --comment "A later run finished without failing: $RUN_URL"
+          fi
 
       - name: Notify Slack
         if: always()
@@ -712,6 +736,7 @@ jobs:
           JOB_STATUS: ${{ job.status }}
           PR_URL: ${{ steps.pr.outputs.pr-url }}
           ISSUE_URL: ${{ steps.issue.outputs.issue-url }}
+          FAILURE_ALREADY_REPORTED: ${{ steps.issue.outputs.failure-already-reported }}
           NEEDS_HUMAN: ${{ steps.pr.outputs.needs-human }}
           TOP_SEVERITY: ${{ steps.gate.outputs.top-severity }}
           REPO: ${{ github.repository }}
@@ -735,8 +760,11 @@ jobs:
             text="${header}"$'\n\n'"*Vulnerabilities*"$'\n'"$(read_file summary.md)"$'\n\n'"*Pull request:* ${PR_URL}"$'\n'"*Merge status:* $(read_file merge-status.txt)"$'\n'"*Not fixed until it is merged and deployed.* Merging does not deploy it."$'\n\n'"*Side effects*"$'\n'"$(read_file side-effects.md)"$'\n\n'"Run: ${RUN_URL}"
           elif [[ -s "$RUNNER_TEMP/problems.txt" ]]; then
             text=":sos: *Vulnerability autofix needs a human* in *${REPO}*. A fix is published but no pull request was opened."$'\n\n'"*Reason:*"$'\n'"$(sed 's/^/- /' "$RUNNER_TEMP/problems.txt")"$'\n\n'"*Fixable vulnerabilities still open*"$'\n'"$(read_file targets.md)"$'\n\n'"*Issue:* ${ISSUE_URL:-could not be opened, so this message repeats on the next run}"$'\n'"This is not reported again while the issue is open. Close it to let the next run try again."$'\n\n'"Run: ${RUN_URL}"
+          elif [[ "$JOB_STATUS" == "failure" && "$FAILURE_ALREADY_REPORTED" == "true" ]]; then
+            echo "This failure is already reported in an open issue, so it is not posted again."
+            exit 0
           elif [[ "$JOB_STATUS" == "failure" ]]; then
-            text=":x: *Vulnerability autofix failed* in *${REPO}* before it could finish, so fixable vulnerabilities may be open. Check the run: ${RUN_URL}"
+            text=":x: *Vulnerability autofix failed* in *${REPO}* before it could finish, so fixable vulnerabilities may be open. Check the run: ${RUN_URL}"$'\n'"*Issue:* ${ISSUE_URL:-could not be opened, so this message repeats on the next run}"$'\n'"Later failed runs are not posted while the issue is open. The first run that does not fail closes it."
           else
             echo "Nothing was done, so there is nothing to report."
             exit 0
