@@ -123,6 +123,19 @@ r=$(new_repo nochange)
 guard "$r"
 check "no change: no diff, problem recorded, no PR" "$(yes bash -c "grep -q '^has-diff=false$' '$GITHUB_OUTPUT' && grep -q 'no change' '$RUNNER_TEMP/problems.txt'")"
 
+step issue
+: > "$GITHUB_OUTPUT"; : > "$work/gh.log"
+cat > "$fakebin/gh" <<'GH'
+#!/usr/bin/env bash
+echo "$*" >> "$GH_LOG"
+[[ "$1 $2" == "issue create" ]] && echo "https://example.com/o/r/issues/2"
+exit 0
+GH
+(cd "$r" && PATH="$fakebin:$PATH" GH_LOG="$work/gh.log" GH_TOKEN=x REPO=o/r KEY=k NEEDS_HUMAN_LABEL=needs-human RUN_URL=u \
+  bash -eo pipefail "$work/issue.sh" > /dev/null 2>&1)
+check "no change: an issue with the key marker and the reason is opened" \
+  "$(yes bash -c "grep -q 'issue create' '$work/gh.log' && grep -q 'vuln-autofix-key: k' '$RUNNER_TEMP/issue-body.md' && grep -q 'no change' '$RUNNER_TEMP/issue-body.md' && grep -q '^issue-url=https://example.com/o/r/issues/2$' '$GITHUB_OUTPUT'")"
+
 r=$(new_repo pkgjson)
 printf '{"name":"a","scripts":{"build":"tsc"},"dependencies":{"x":"1.0.0"}}\n' > "$r/package.json"
 printf '{"packages":{"":{},"node_modules/x":{"version":"1.0.0"}}}\n' > "$r/package-lock.json"

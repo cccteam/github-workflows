@@ -5,7 +5,7 @@
 ## How it works
 
 1. **Gate (no LLM).** Collects open Dependabot alerts and, for Go, `govulncheck` findings. A vulnerability is actionable only when a fixed version is published (`first_patched_version` for Dependabot, `fixed_version` for govulncheck; a Go standard library finding is fixed by raising the `go` directive). Anything without a published fix is never touched. If nothing is actionable, the run ends here.
-2. **Dedupe.** If an open `claude/vuln-autofix/*` pull request already carries the same fix (matched by a marker in its body), the run ends.
+2. **Dedupe.** If an open `claude/vuln-autofix/*` pull request already carries the same fix, or an open issue records that the same set of vulnerabilities could not be fixed (both matched by a marker in the body), the run ends.
 3. **Fix.** [`anthropics/claude-code-action`](https://github.com/anthropics/claude-code-action) runs on a new branch `claude/vuln-autofix/<date>-<run id>` with a short tool allow-list (read-only file tools, `go get/mod/list`, `npm update/install/ls`, read-only git). Its prompt names only the packages and their minimum fixed versions.
 4. **Guards (deterministic).** The result is checked for:
    - only `go.mod`, `go.sum`, `go.work`, `go.work.sum`, `package.json` and `package-lock.json` changed (plus anything matching `extra-allowed-files-regex`). Changes under `.github/` are always reverted and never pushed, and a new file that is not one of these (for example a binary written by `go build`) is left out of the commit;
@@ -15,7 +15,7 @@
 5. **Pull request.**
    - *All guards pass:* a ready pull request with labels, severity, advisory IDs, old to new versions and side effects. With `auto-merge: true` it runs `gh pr merge --auto --squash`, so it merges only when the required checks pass.
    - *A guard fails:* the first-pass fix is kept, pushed, and opened as a **draft** pull request labelled `needs-human` (`needs-human-label`). Its body lists exactly which guards failed and what remains. Auto-merge is never enabled for it.
-   - *The bump produced no change at all:* no pull request; Slack says a fix exists but needs a human.
+   - *The bump produced no change at all:* no pull request. An issue labelled `needs-human` is opened with the reason, and Slack says a fix exists but needs a human. While that issue is open the same set of vulnerabilities is not tried or reported again; close it to let the next run try again.
 6. **Slack.** One message, only after action. Critical and high severity are called out at the top. It carries the vulnerabilities, how they were addressed, the PR link, the merge status, "needs deployment to reach production" and any side effects (a changed `go` directive or toolchain, indirect dependencies). For a draft first-pass fix it says more work is needed and why. An unexpected workflow failure also posts.
 
 Supported: a Go module and/or an npm `package-lock.json` at the repository root. Other ecosystems, other lockfiles (bun, yarn, pnpm) and manifests in subdirectories are ignored for now: a Dependabot alert whose manifest is not at the repository root is skipped, so the run stays silent for it.
@@ -36,7 +36,7 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
-      issues: read
+      issues: write
     with:
       auto-merge: true
     secrets:
@@ -55,7 +55,7 @@ Do not give the calling workflow a `concurrency` group named `vuln-autofix-<repo
 | --- | --- | --- |
 | `auto-merge` | `true` | Enable auto-merge (squash) on the pull request. |
 | `pr-labels` | `dependencies,security` | Labels for the pull request, created if missing. |
-| `needs-human-label` | `needs-human` | Extra label on the draft pull request opened when a guard failed. |
+| `needs-human-label` | `needs-human` | Label on the draft pull request opened when a guard failed, and on the issue opened when no pull request could be opened. |
 | `extra-allowed-files-regex` | empty | Extra file paths the fix may change, for example `^\.go-version$`. |
 | `govulncheck-version` | `v1.9.0` | govulncheck release to install. |
 | `node-version` | `lts/*` | Node version for npm builds. |

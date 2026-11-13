@@ -90,7 +90,7 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
-      issues: read
+      issues: write
     defaults:
       run:
         shell: bash
@@ -218,7 +218,7 @@ jobs:
           echo "Actionable vulnerabilities: $count"
           cat "$RUNNER_TEMP/targets.md"
 
-      - name: Skip if an open pull request already fixes these
+      - name: Skip if an open pull request or issue already covers these
         id: dedupe
         if: steps.gate.outputs.count != '0'
         env:
@@ -229,8 +229,14 @@ jobs:
           existing=$(gh pr list --repo "$REPO" --state open --limit 100 --json url,headRefName,body \
             | jq -r --arg prefix "$BRANCH_PREFIX" --arg marker "vuln-autofix-key: $KEY" \
                 'map(select((.headRefName | startswith($prefix)) and (.body | contains($marker)))) | .[0].url // empty')
+          # A run that could not open a pull request records that in an issue. While it is open the same set of
+          # vulnerabilities is not tried or reported again; closing it lets the next run try again.
+          if [[ -z "$existing" ]]; then
+            existing=$(gh issue list --repo "$REPO" --state open --limit 100 --json url,body \
+              | jq -r --arg marker "vuln-autofix-key: $KEY" 'map(select(.body | contains($marker))) | .[0].url // empty')
+          fi
           if [[ -n "$existing" ]]; then
-            echo "An open pull request already carries this fix: $existing"
+            echo "An open pull request or issue already covers these vulnerabilities: $existing"
             echo "proceed=false" >> "$GITHUB_OUTPUT"
           else
             echo "proceed=true" >> "$GITHUB_OUTPUT"
@@ -606,7 +612,41 @@ jobs:
           fi
           echo "$status" > "$RUNNER_TEMP/merge-status.txt"
 
-      # ---- Step E: Slack, only after action was taken or a human is needed ------------------------------------
+      # ---- Step E: issue when no pull request could be opened, then Slack --------------------------------------
+
+      - name: Open an issue when no pull request was opened
+        id: issue
+        if: always() && steps.dedupe.outputs.proceed == 'true' && steps.pr.outputs.pr-url == ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          KEY: ${{ steps.gate.outputs.key }}
+          NEEDS_HUMAN_LABEL: ${{ inputs.needs-human-label }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [[ ! -s "$RUNNER_TEMP/problems.txt" ]]; then
+            echo "No problem was recorded, so there is nothing to put in an issue."
+            exit 0
+          fi
+          {
+            echo "<!-- vuln-autofix-key: $KEY -->"
+            echo "The vulnerability autofix workflow found vulnerabilities with a published fix, but could not open a pull request for them."
+            echo
+            echo "### Reason"
+            sed 's/^/- /' "$RUNNER_TEMP/problems.txt"
+            echo
+            echo "### Fixable vulnerabilities still open"
+            cat "$RUNNER_TEMP/targets.md"
+            echo
+            echo "While this issue is open the workflow does not try or report this same set of vulnerabilities again. Close it to let the next run try again."
+            echo
+            echo "Workflow run: $RUN_URL"
+          } > "$RUNNER_TEMP/issue-body.md"
+          gh label create "$NEEDS_HUMAN_LABEL" --repo "$REPO" > /dev/null 2>&1 || true
+          issue_url=$(gh issue create --repo "$REPO" --title "Vulnerability autofix needs a human" \
+            --body-file "$RUNNER_TEMP/issue-body.md" --label "$NEEDS_HUMAN_LABEL" | tail -n1)
+          echo "issue-url=$issue_url" >> "$GITHUB_OUTPUT"
+
 
       - name: Notify Slack
         if: always()
@@ -615,6 +655,7 @@ jobs:
           CHANNEL: ${{ inputs.slack-channel-id || secrets.SLACK_CHANNEL_ID }}
           JOB_STATUS: ${{ job.status }}
           PR_URL: ${{ steps.pr.outputs.pr-url }}
+          ISSUE_URL: ${{ steps.issue.outputs.issue-url }}
           NEEDS_HUMAN: ${{ steps.pr.outputs.needs-human }}
           TOP_SEVERITY: ${{ steps.gate.outputs.top-severity }}
           REPO: ${{ github.repository }}
@@ -637,7 +678,7 @@ jobs:
             esac
             text="${header}"$'\n\n'"*Vulnerabilities*"$'\n'"$(read_file summary.md)"$'\n\n'"*Pull request:* ${PR_URL}"$'\n'"*Merge status:* $(read_file merge-status.txt)"$'\n'"*Not fixed until it is merged and deployed.* Merging does not deploy it."$'\n\n'"*Side effects*"$'\n'"$(read_file side-effects.md)"$'\n\n'"Run: ${RUN_URL}"
           elif [[ -s "$RUNNER_TEMP/problems.txt" ]]; then
-            text=":sos: *Vulnerability autofix needs a human* in *${REPO}*. A fix is published but no pull request was opened."$'\n\n'"*Reason:*"$'\n'"$(sed 's/^/- /' "$RUNNER_TEMP/problems.txt")"$'\n\n'"*Fixable vulnerabilities still open*"$'\n'"$(read_file targets.md)"$'\n\n'"Run: ${RUN_URL}"
+            text=":sos: *Vulnerability autofix needs a human* in *${REPO}*. A fix is published but no pull request was opened."$'\n\n'"*Reason:*"$'\n'"$(sed 's/^/- /' "$RUNNER_TEMP/problems.txt")"$'\n\n'"*Fixable vulnerabilities still open*"$'\n'"$(read_file targets.md)"$'\n\n'"*Issue:* ${ISSUE_URL:-could not be opened, so this message repeats on the next run}"$'\n'"This is not reported again while the issue is open. Close it to let the next run try again."$'\n\n'"Run: ${RUN_URL}"
           elif [[ "$JOB_STATUS" == "failure" ]]; then
             text=":x: *Vulnerability autofix failed* in *${REPO}* before it could finish, so fixable vulnerabilities may be open. Check the run: ${RUN_URL}"
           else
