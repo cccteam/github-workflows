@@ -78,7 +78,7 @@ on:
         type: string
         default: 'console'
       upload_sarif:
-        description: 'Enable or disable SARIF file upload for Checkov and TFLint (true/false)'
+        description: 'Upload Checkov and TFLint results to GitHub code scanning. When true, both write SARIF whatever output_format and output_file_path say'
         required: false
         type: boolean
         default: false
