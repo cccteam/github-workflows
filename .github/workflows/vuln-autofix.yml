@@ -656,11 +656,11 @@ jobs:
             text="${header}"$'\n\n'"*What still needs a human*"$'\n'"$(sed 's/^/- /' "$RUNNER_TEMP/problems.txt")"$'\n\n'"*Vulnerabilities*"$'\n'"$(read_file summary.md)"$'\n\n'"*Draft pull request:* ${PR_URL}"$'\n'"*Merge status:* $(read_file merge-status.txt)"$'\n'"*Needs deployment to reach production* once a human finishes and merges it."$'\n\n'"*Side effects*"$'\n'"$(read_file side-effects.md)"$'\n\n'"Run: ${RUN_URL}"
           elif [[ -n "$PR_URL" ]]; then
             case "$TOP_SEVERITY" in
-              critical) header=":rotating_light: *CRITICAL vulnerability fixed* in *${REPO}*" ;;
-              high) header=":rotating_light: *HIGH severity vulnerability fixed* in *${REPO}*" ;;
-              *) header=":lock: Security fix opened for *${REPO}*" ;;
+              critical) header=":rotating_light: *CRITICAL vulnerability: fix pull request opened* in *${REPO}*" ;;
+              high) header=":rotating_light: *HIGH severity vulnerability: fix pull request opened* in *${REPO}*" ;;
+              *) header=":lock: Security fix pull request opened for *${REPO}*" ;;
             esac
-            text="${header}"$'\n\n'"*Vulnerabilities*"$'\n'"$(read_file summary.md)"$'\n\n'"*Pull request:* ${PR_URL}"$'\n'"*Merge status:* $(read_file merge-status.txt)"$'\n'"*Needs deployment to reach production.* Merging does not deploy it."$'\n\n'"*Side effects*"$'\n'"$(read_file side-effects.md)"$'\n\n'"Run: ${RUN_URL}"
+            text="${header}"$'\n\n'"*Vulnerabilities*"$'\n'"$(read_file summary.md)"$'\n\n'"*Pull request:* ${PR_URL}"$'\n'"*Merge status:* $(read_file merge-status.txt)"$'\n'"*Not fixed until it is merged and deployed.* Merging does not deploy it."$'\n\n'"*Side effects*"$'\n'"$(read_file side-effects.md)"$'\n\n'"Run: ${RUN_URL}"
           elif [[ -s "$RUNNER_TEMP/problems.txt" ]]; then
             text=":sos: *Vulnerability autofix needs a human* in *${REPO}*. A fix is published but no pull request was opened."$'\n\n'"*Reason:*"$'\n'"$(sed 's/^/- /' "$RUNNER_TEMP/problems.txt")"$'\n\n'"*Fixable vulnerabilities still open*"$'\n'"$(read_file targets.md)"$'\n\n'"Run: ${RUN_URL}"
           elif [[ "$JOB_STATUS" == "failure" ]]; then
