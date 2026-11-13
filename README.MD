@@ -22,7 +22,7 @@ This repository provides a collection of reusable GitHub Actions workflow templa
 
 - **Vulnerability Autofix**
   [`vuln-autofix.yml`](.github/workflows/vuln-autofix.yml):
-  Runs daily, fixes Dependabot and govulncheck findings that already have a published fix by opening a pull request that bumps only the fixed packages (Claude does the bump, deterministic guards check it), enables auto-merge when every guard passes (otherwise opens a draft needs-human PR with the first-pass fix), and posts to Slack only after action was taken. Needs setup of a GitHub App, secrets and branch protection. See [docs/vuln-autofix.md](docs/vuln-autofix.md).
+  Runs daily, fixes Dependabot and govulncheck findings that already have a published fix by opening a pull request that bumps only the fixed packages, each checked on its own. Packages that pass go to a pull request with auto-merge, and packages that need a person go to a separate draft needs-human pull request with a first-pass bump. Posts to Slack when a fix is merged or needs a person. Needs setup of a GitHub App, secrets and branch protection. See [docs/vuln-autofix.md](docs/vuln-autofix.md).
 
 ### Docker Workflows
 

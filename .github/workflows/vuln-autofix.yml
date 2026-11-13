@@ -1,13 +1,11 @@
-# This workflow fixes known, fixable dependency vulnerabilities without a human in the loop.
-#  1. A deterministic gate (no LLM) collects open Dependabot alerts and govulncheck findings and keeps
-#     only those with a published fixed version. Nothing actionable: the run ends silently.
-#  2. A script bumps only those packages to the minimum fixed version with go get and npm.
-#  3. Deterministic guards check the result: only dependency files changed, no major version jump, the fixed
-#     versions are reached and the code still builds.
-#  4. All guards pass: a pull request is opened and auto-merge is enabled. A guard fails: the first-pass fix is
-#     kept as a DRAFT pull request labelled needs-human, auto-merge stays off, and the problems are listed.
-#     Slack is posted only after action was taken.
-# Vulnerabilities with no published fix are never touched.
+# This workflow fixes dependency vulnerabilities that have a published fix, without a human in the loop.
+#  1. It collects open Dependabot alerts and govulncheck findings and keeps only those with a published fixed
+#     version. Nothing to fix: the run ends silently. A vulnerability with no published fix is never touched.
+#  2. A script bumps each of those packages to its minimum fixed version with go get or npm, and checks it: no
+#     major version change, the fixed version is reached, and govulncheck no longer reports it.
+#  3. The packages that pass go to one pull request with auto-merge. The packages that do not pass go to a
+#     separate DRAFT pull request labelled needs-human, with a first-pass bump and the reason for each.
+#  4. Slack is told when a fix pull request is merged, when packages are left for a human, and when a run fails.
 #
 # See docs/vuln-autofix.md for the setup prerequisites (tokens, branch protection) and a caller example.
 #
