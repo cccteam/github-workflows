@@ -59,6 +59,7 @@ Do not give the calling workflow a `concurrency` group named `vuln-autofix-<repo
 | `pr-labels` | `dependencies,security` | Labels for the pull request, created if missing. |
 | `needs-human-label` | `needs-human` | Label on the draft pull request opened when a guard failed, and on the issue opened when no pull request could be opened. |
 | `extra-allowed-files-regex` | empty | Extra file paths the fix may change, for example `^\.go-version$`. |
+| `go-private` | empty | `GOPRIVATE` value for private Go modules, for example `github.com/my-org/*`. Needs `GO_PRIVATE_MODULES_TOKEN`. |
 | `govulncheck-version` | `v1.9.0` | govulncheck release to install. |
 | `node-version` | `lts/*` | Node version for npm builds. |
 | `slack-channel-id` | empty | Overrides `SLACK_CHANNEL_ID`. |
@@ -68,6 +69,7 @@ Do not give the calling workflow a `concurrency` group named `vuln-autofix-<repo
 
 - **`DEPENDABOT_ALERTS_TOKEN`**: the same secret `golang-security-scan` uses. `GITHUB_TOKEN` cannot read Dependabot alerts, so a PAT or GitHub App token with that read access is required.
 - **`AUTOFIX_APP_CLIENT_ID`** and **`AUTOFIX_APP_PEM`**: client ID and private key of a GitHub App installed on the repository with Contents, Pull requests and Issues write access. The workflow creates a short-lived token from them after the Claude step has finished, and uses it to push the branch, open the pull request, enable auto-merge and open issues. The job's own `GITHUB_TOKEN` is read-only, so no token that can write exists while Claude runs. An app is required because pull requests opened with `GITHUB_TOKEN` do not trigger workflows, so their checks would never run.
+- **`GO_PRIVATE_MODULES_TOKEN`** with the `go-private` input (only for repositories that depend on private Go modules): a read-only token that can clone those modules. It is available to the Claude step, so it must not have write access.
 - **`ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`**: credential for Claude.
 - **`SLACK_BOT_TOKEN`** and **`SLACK_CHANNEL_ID`**: as for `golang-security-scan`.
 - **Auto-merge and branch protection**: enable "Allow auto-merge" on the repository. The bot cannot approve its own pull request, so the protected branch must either not require a human review for these pull requests or add the GitHub App as a bypass actor for that rule in a ruleset. Checks that cannot pass on a bot PR (for example a closes-an-issue check) must be excluded for it. If auto-merge cannot be enabled, the PR stays open and Slack says a human needs to merge it.

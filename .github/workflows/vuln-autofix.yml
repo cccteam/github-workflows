@@ -37,6 +37,11 @@ on:
         type: string
         default: ''
         description: Extended regex of additional file paths the fix may change, e.g. '^\.go-version$' (go.mod, go.sum, go.work, go.work.sum, package.json and package-lock.json are always allowed)
+      go-private:
+        required: false
+        type: string
+        default: ''
+        description: GOPRIVATE value for private Go modules, e.g. 'github.com/my-org/*'. Needs the GO_PRIVATE_MODULES_TOKEN secret.
       govulncheck-version:
         required: false
         type: string
@@ -66,6 +71,9 @@ on:
       AUTOFIX_APP_PEM:
         required: true
         description: Private key of that GitHub App
+      GO_PRIVATE_MODULES_TOKEN:
+        required: false
+        description: Read-only token that can clone the private Go modules named by the 'go-private' input. Claude can use it while it runs, so it must not have write access.
       ANTHROPIC_API_KEY:
         required: false
         description: Anthropic API key for Claude. One of ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN is required.
@@ -139,6 +147,12 @@ jobs:
         if: hashFiles('go.mod') != ''
         env:
           GOVULNCHECK_VERSION: ${{ inputs.govulncheck-version }}
+          # Credentials for private Go modules, only when GO_PRIVATE_MODULES_TOKEN is set. They are passed as
+          # environment variables to the steps that download modules, and are never written to a file.
+          GOPRIVATE: ${{ inputs.go-private }}
+          GIT_CONFIG_COUNT: ${{ secrets.GO_PRIVATE_MODULES_TOKEN != '' && '1' || '0' }}
+          GIT_CONFIG_KEY_0: url.https://x-access-token:${{ secrets.GO_PRIVATE_MODULES_TOKEN }}@github.com/.insteadOf
+          GIT_CONFIG_VALUE_0: https://github.com/
         run: |
           go install "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}"
           govulncheck -format json ./... > "$RUNNER_TEMP/govulncheck.json"
@@ -271,6 +285,10 @@ jobs:
         env:
           # npm must not run package install scripts while Claude runs
           npm_config_ignore_scripts: 'true'
+          GOPRIVATE: ${{ inputs.go-private }}
+          GIT_CONFIG_COUNT: ${{ secrets.GO_PRIVATE_MODULES_TOKEN != '' && '1' || '0' }}
+          GIT_CONFIG_KEY_0: url.https://x-access-token:${{ secrets.GO_PRIVATE_MODULES_TOKEN }}@github.com/.insteadOf
+          GIT_CONFIG_VALUE_0: https://github.com/
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -446,6 +464,10 @@ jobs:
         if: steps.guard.outputs.has-diff == 'true'
         env:
           GOVULNCHECK_VERSION: ${{ inputs.govulncheck-version }}
+          GOPRIVATE: ${{ inputs.go-private }}
+          GIT_CONFIG_COUNT: ${{ secrets.GO_PRIVATE_MODULES_TOKEN != '' && '1' || '0' }}
+          GIT_CONFIG_KEY_0: url.https://x-access-token:${{ secrets.GO_PRIVATE_MODULES_TOKEN }}@github.com/.insteadOf
+          GIT_CONFIG_VALUE_0: https://github.com/
         run: |
           problem() {
             echo "$1" >> "$RUNNER_TEMP/problems.txt"
