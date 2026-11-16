@@ -66,11 +66,6 @@ on:
         required: false
         type: string
         default: '1.13.9' # renovate: datasource=github-releases depName=opentofu/opentofu
-      terraform_version:
-        description: '(Deprecated) Ignored. Files are formatted with OpenTofu at tofu_version. Remove this input; a future major release will drop it'
-        required: false
-        type: string
-        default: ''
       output_format:
         description: 'Output format for Checkov results (e.g., cli or cli,sarif)'
         required: false
@@ -176,13 +171,6 @@ jobs:
           ref: ${{ github.event.pull_request.head.ref }}
           token: ${{ steps.app-token.outputs.token }}
           fetch-depth: 0
-
-      - name: Warn about deprecated terraform_version input
-        if: inputs.terraform_version != ''
-        run: |
-          echo "::warning::terraform_version is deprecated and ignored. Files are formatted with OpenTofu ${TOFU_VERSION}. Remove terraform_version from the call to terraform-ci.yml, and set tofu_version to pick another OpenTofu version."
-        env:
-          TOFU_VERSION: ${{ inputs.tofu_version }}
 
       - name: Set up OpenTofu
         if: steps.check-changes.outputs.has_changes == 'true'
