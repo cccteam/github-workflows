@@ -32,6 +32,10 @@
 #    are compared as they are.
 #    It checks the whole repository, not only the folders a pull request
 #    changed. A module repository has no environment folders and passes.
+#    Numbered folders whose code is in environment_other_codes (shr, cmn,
+#    org, ...) are left out. Any other numbered folder holding OpenTofu files,
+#    such as 3-prod, gets a warning, since it is most likely an environment
+#    with a non-standard name that would otherwise drop out of the check.
 #
 # NOTE: Certain inputs are required, as detailed in the "inputs" section below.
 
@@ -98,10 +102,15 @@ on:
         type: string
         default: '.'
       environment_codes:
-        description: 'Comma-separated environment codes. Folders named <number>-<code> are compared; others, such as 0-bootstrap or 3-shr, are left out and listed in the job summary'
+        description: 'Comma-separated environment codes. Folders named <number>-<code> are compared. Other numbered folders are left out and listed in the job summary (see environment_other_codes)'
         required: false
         type: string
         default: 'dev,int,tst,uat,stg,prd'
+      environment_other_codes:
+        description: 'Comma-separated codes of numbered folders that are not environments, such as shared or layer folders. They are left out quietly. A folder holding OpenTofu files whose code is in neither list, such as 3-prod, gets a warning'
+        required: false
+        type: string
+        default: 'shr,cmn,log,org,boot,bootstrap'
       environment_include_files:
         description: 'Comma-separated glob patterns, matched against file names at any depth, of the files the environment comparison covers'
         required: false
@@ -419,6 +428,7 @@ jobs:
           MODE: ${{ inputs.environment_consistency }}
           WORKING_DIRECTORY: ${{ inputs.environment_working_directory }}
           ENVIRONMENTS: ${{ inputs.environment_codes }}
+          OTHER_CODES: ${{ inputs.environment_other_codes }}
           INCLUDE_FILES: ${{ inputs.environment_include_files }}
           IGNORE_FILES: ${{ inputs.environment_ignore_files }}
         run: |
@@ -440,6 +450,10 @@ jobs:
           # The file list for the pull request comment.
           findings="${RUNNER_TEMP:?}/environment-consistency.md"
           : > "$findings"
+          # Numbered folders with a code in neither list, for the comment.
+          unknown_findings="$RUNNER_TEMP/environment-consistency-unknown.md"
+          : > "$unknown_findings"
+          IFS=, read -ra other_codes <<< "${OTHER_CODES//[[:space:]]/}"
           env_codes="${ENVIRONMENTS//[[:space:]]/}"
           env_regex="(^|/)[0-9]+-(${env_codes//,/|})$"
           IFS=, read -ra include_patterns <<< "${INCLUDE_FILES//[[:space:]]/}"
@@ -627,7 +641,47 @@ jobs:
             } | tee -a "$summary"
           fi
 
+          # A numbered folder whose code is in neither list is most likely an
+          # environment with a non-standard name, such as 3-prod, so it would
+          # drop out of the check unnoticed. Only folders holding OpenTofu files
+          # count. Always a warning: the name is the problem, not drift.
+          unknown=0
+          for dir in "${skipped_dirs[@]}"; do
+            [[ -n $dir ]] || continue
+            code=${dir##*/}
+            code=${code#*-}
+            known=false
+            for other in "${other_codes[@]}"; do
+              [[ $code == "$other" ]] && known=true
+            done
+            $known && continue
+            [[ -n $(tracked_files "$dir") ]] || continue
+            unknown=$((unknown + 1))
+            # The CCC code for a common spelling, when there is one.
+            case $code in
+              prod | production) suggestion=prd ;;
+              test | testing | qa) suggestion=tst ;;
+              stage | staging) suggestion=stg ;;
+              develop | development) suggestion=dev ;;
+              integration) suggestion=int ;;
+              *) suggestion= ;;
+            esac
+            if [[ -n $suggestion ]]; then
+              rename="Rename it to ${dir%-*}-$suggestion"
+            else
+              rename="Rename it with a CCC environment code"
+            fi
+            message="'$code' is not in environment_codes or environment_other_codes, so this folder is not compared. $rename, or add '$code' to one of the lists."
+            echo "::warning file=$dir::$message"
+            echo "- \`$dir\`: $rename." >> "$unknown_findings"
+            {
+              echo
+              echo "- \`$dir\`: $message"
+            } | tee -a "$summary"
+          done
+
           echo "differences=$differences" >> "${GITHUB_OUTPUT:-/dev/null}"
+          echo "unknown=$unknown" >> "${GITHUB_OUTPUT:-/dev/null}"
 
           if (( compared == 0 )); then
             echo "No component has more than one folder matching $env_regex, so there is nothing to compare. A module repository has none." | tee -a "$summary"
@@ -657,6 +711,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           MODE: ${{ inputs.environment_consistency }}
           DIFFERENCES: ${{ steps.compare.outputs.differences }}
+          UNKNOWN: ${{ steps.compare.outputs.unknown }}
           REPOSITORY: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -665,13 +720,25 @@ jobs:
 
           marker='<!-- cccteam/github-workflows: environment-consistency -->'
           findings="$RUNNER_TEMP/environment-consistency.md"
+          unknown_findings="$RUNNER_TEMP/environment-consistency-unknown.md"
           body="$RUNNER_TEMP/environment-consistency-comment.md"
           max_listed=50
 
           comment_id=$(gh api --paginate "repos/$REPOSITORY/issues/$PR_NUMBER/comments" \
             --jq ".[] | select(.body | contains(\"$marker\")) | .id" | head -n 1)
 
-          if (( DIFFERENCES == 0 )); then
+          # The folders whose names keep them out of the check.
+          unknown_section() {
+            (( ${UNKNOWN:-0} > 0 )) || return 0
+            echo
+            echo "#### Folders that aren't compared"
+            echo
+            echo "These numbered folders hold OpenTofu files, but their codes aren't in \`environment_codes\` or \`environment_other_codes\`, so the check skips them. Rename an environment folder with a CCC environment code (\`3-prd\`, not \`3-prod\`). For a folder that isn't an environment, add its code to \`environment_other_codes\`."
+            echo
+            cat "$unknown_findings"
+          }
+
+          if (( DIFFERENCES == 0 && ${UNKNOWN:-0} == 0 )); then
             if [[ -z $comment_id ]]; then
               echo "Environment folders match, and there is no earlier comment to update."
               exit 0
@@ -680,7 +747,15 @@ jobs:
               echo "$marker"
               echo "### Environment folders match"
               echo
-              echo "The differences reported here earlier are fixed. Every environment folder holds the same code."
+              echo "The problems reported here earlier are fixed. Every environment folder holds the same code."
+            } > "$body"
+          elif (( DIFFERENCES == 0 )); then
+            {
+              echo "$marker"
+              echo "### Some folders aren't compared"
+              echo
+              echo "The environment folders that are compared match."
+              unknown_section
             } > "$body"
           else
             {
@@ -702,6 +777,7 @@ jobs:
               else
                 echo "For now this check only warns. A future release of \`cccteam/github-workflows\` will make it fail, so please fix these before then. Once the folders match, set \`environment_consistency: fail\` where this repository calls \`terraform-ci.yml\` to enforce it now."
               fi
+              unknown_section
             } > "$body"
           fi
 
