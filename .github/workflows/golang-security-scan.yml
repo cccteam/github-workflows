@@ -1,11 +1,14 @@
 # This workflow performs security scanning for Go projects.
-#  - govulncheck is used to check for vulnerabilities in the Go modules
+#  - govulncheck is used to check for vulnerabilities in the Go modules (each module listed in the release-please config)
 #  - grype is used to check for vulnerabilities in the application's final docker image (optional, disabled by default)
-#  - Dependabot security alerts are checked using the GitHub API
-# GitHub issues are created for failed jobs.
-# A Slack message is sent (per user provided details) if either security check fails.
+#  - Dependabot security alerts are checked using the GitHub API (optional, enabled by default)
+#  - semgrep is used for static analysis of the whole repository (optional, disabled by default)
+# govulncheck and grype scan the default branch and, by default, the latest release; Dependabot and semgrep cover the default branch only.
+# SARIF reports from grype and semgrep can be uploaded to the GitHub Advanced Security Dashboard (optional, disabled by default).
+# A GitHub issue is created or updated for each check that fails.
+# A Slack message is sent (per user provided details) if any security check fails.
 #
-# NOTE: This workflow has required inputs. Refer to the 'inputs' & 'secrets' sections below.
+# NOTE: This workflow has required secrets. Refer to the 'inputs' & 'secrets' sections below.
 name: Golang Security Scan Template
 
 on:
@@ -464,7 +467,8 @@ jobs:
       fail-fast: false
       matrix:
         label: [govulncheck, grype, dependabot, semgrep]
-    needs: [govulncheck, grype, dependabot, semgrep_scan, merge-govulncheck-reports]
+    needs:
+      [govulncheck, grype, dependabot, semgrep_scan, merge-govulncheck-reports]
     if: always()
     steps:
       - name: Setup environment for this matrix job
