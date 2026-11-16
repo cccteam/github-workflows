@@ -20,6 +20,10 @@ This repository provides a collection of reusable GitHub Actions workflow templa
   [`golang-security-scan.yml`](.github/workflows/golang-security-scan.yml):
   Performs comprehensive security scanning for Go projects using govulncheck, Grype, Semgrep, and Dependabot alerts. Notifies via Slack and creates GitHub issues for failed jobs. Semgrep here scans the whole repository with no baseline (the pull request scan in golang-ci is the gate; this is the inventory) and its findings open or update a "Semgrep Report" issue like the other scanners'. Optionally uploads SARIF reports to GitHub Advanced Security Dashboard for scheduled and manual runs.
 
+- **Vulnerability Autofix**
+  [`vuln-autofix.yml`](.github/workflows/vuln-autofix.yml):
+  Runs daily, fixes Dependabot and govulncheck findings that already have a published fix by opening a pull request that bumps only the fixed packages, each checked on its own. Packages that pass go to a pull request with auto-merge, and packages that need a person go to a separate draft needs-human pull request with a first-pass bump. Posts to Slack when a fix is merged or needs a person. Needs setup of a GitHub App, secrets and branch protection. See [docs/vuln-autofix.md](docs/vuln-autofix.md).
+
 ### Docker Workflows
 
 - **Docker Build & Scan**
