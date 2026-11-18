@@ -86,6 +86,11 @@ on:
         required: false
         type: string
         default: ''
+      drop_suppressed_from_sarif:
+        description: 'Remove inline-suppressed Checkov findings (#checkov:skip) from the SARIF before upload, so a reviewed suppression does not open a code scanning alert. Does not change what Checkov fails on.'
+        required: false
+        type: boolean
+        default: true
       environment_consistency:
         description: 'What the environment-consistency job does when environment folders differ: warn (report, comment on the pull request and pass), fail (also fail the job) or off (skip the job)'
         required: false
@@ -390,6 +395,22 @@ jobs:
           output_file_path: ${{ inputs.upload_sarif == true && 'console,results.sarif' || inputs.output_file_path }}
           quiet: true
           skip_check: ${{ inputs.skip_check }}
+
+      # Checkov writes an inline-suppressed finding into the SARIF as a result
+      # carrying a "suppressions" entry rather than omitting it, and code
+      # scanning opens an alert regardless (bridgecrewio/checkov#5925). Drop
+      # those results so a reviewed #checkov:skip stops producing an alert and a
+      # review comment. Checkov's own pass/fail is already decided by this point.
+      - name: Drop inline-suppressed findings from SARIF
+        if: inputs.upload_sarif == true && inputs.drop_suppressed_from_sarif == true && steps.changed-files.outputs.has_files == 'true' && hashFiles('results.sarif') != ''
+        run: |
+          set -euo pipefail
+          before=$(jq '[.runs[].results[]] | length' results.sarif)
+          jq 'del(.runs[].results[] | select(has("suppressions") and (.suppressions | length > 0)))' \
+            results.sarif > results.filtered.sarif
+          mv results.filtered.sarif results.sarif
+          after=$(jq '[.runs[].results[]] | length' results.sarif)
+          echo "SARIF results: $before -> $after ($((before - after)) inline-suppressed dropped)"
 
       - name: Upload SARIF file
         if: inputs.upload_sarif == true && steps.changed-files.outputs.has_files == 'true' && hashFiles('results.sarif') != ''
