@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.0.0](https://github.com/cccteam/github-workflows/compare/v8.3.1...v9.0.0) (2026-11-18)
+
+
+### ⚠ BREAKING CHANGES
+
+* **terraform-ci:** report environment folder drift, format with OpenTofu, and remove working_dirs and terraform_version ([#206](https://github.com/cccteam/github-workflows/issues/206))
+
+### Features
+
+* **terraform-ci:** report environment folder drift, format with OpenTofu, and remove working_dirs and terraform_version ([#206](https://github.com/cccteam/github-workflows/issues/206)) ([0e1c999](https://github.com/cccteam/github-workflows/commit/0e1c9991315519078ae2ee79d0ad00be492de02f))
+
+
+### Documentation
+
+* **golang-security-scan:** update the header comment to cover semgrep, latest-release scanning and SARIF upload ([#209](https://github.com/cccteam/github-workflows/issues/209)) ([ae3a141](https://github.com/cccteam/github-workflows/commit/ae3a1410ffdec2fb0a45f7af1ae95b3ff5a09e76))
+
 ## [8.3.1](https://github.com/cccteam/github-workflows/compare/v8.3.0...v8.3.1) (2026-11-10)
 
 
