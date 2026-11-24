@@ -16,6 +16,15 @@
         "default: '(?<depName>[a-z0-9./-]+):(?<currentValue>[^@']+)@(?<currentDigest>sha256:[a-f0-9]{64})'"
       ],
       "datasourceTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "Tool versions used as workflow input defaults, marked with a renovate comment (e.g. tofu_version)",
+      "managerFilePatterns": ["/^\\.github/workflows/.+\\.ya?ml$/"],
+      "matchStrings": [
+        "default: '(?<currentValue>[^']+)' # renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)"
+      ],
+      "extractVersionTemplate": "^v?(?<version>.+)$"
     }
   ]
 }
